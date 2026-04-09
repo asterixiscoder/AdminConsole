@@ -9,6 +9,7 @@ The repository currently contains:
 - a working Xcode scaffold
 - a local Swift package for modular core logic
 - Phase 0 prototype wiring for multi-scene desktop state
+- a live SSH terminal runtime wired through `RuntimeRegistry`
 - architecture and roadmap documentation
 
 ## Current Status
@@ -18,6 +19,7 @@ The repository currently contains:
 - shared `DesktopStore` and `PhaseZeroCoordinator` in place
 - control scene and external desktop scene both wired to shared state
 - browser spike and keyboard/pointer prototype started
+- focused terminal windows can open a real SSH shell session
 
 ## Repository Layout
 
@@ -38,7 +40,9 @@ AdminConsole/
 
 ### Open In Xcode
 
-Open `AdminConsole.xcworkspace` in Xcode.
+Open `AdminConsole.xcodeproj` in Xcode.
+
+The local `AppModules` package is already attached to the project as a Swift Package dependency, so a separate workspace is not required for day-to-day development.
 
 ### Local Checks
 

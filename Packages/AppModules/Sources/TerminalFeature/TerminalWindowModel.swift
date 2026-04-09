@@ -1,12 +1,11 @@
 import DesktopDomain
-import SSHKit
 
 public struct TerminalWindowModel: Sendable, Equatable {
     public var window: DesktopWindow
-    public var sessionState: SSHSessionState
+    public var terminalState: TerminalSurfaceState
 
-    public init(window: DesktopWindow, sessionState: SSHSessionState = .idle) {
+    public init(window: DesktopWindow, terminalState: TerminalSurfaceState? = nil) {
         self.window = window
-        self.sessionState = sessionState
+        self.terminalState = terminalState ?? window.terminalState ?? .idle()
     }
 }

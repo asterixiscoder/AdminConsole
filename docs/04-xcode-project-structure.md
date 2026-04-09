@@ -28,6 +28,8 @@ AdminConsole/
 
 ## Xcode Targets
 
+Open `AdminConsole.xcodeproj` directly in Xcode. The local `Packages/AppModules` package should be consumed through the project's Swift Package reference, not as a separate manually opened project.
+
 ### `AdminConsoleApp`
 
 Main iOS application target.
@@ -123,4 +125,3 @@ Recommended external dependencies:
 - terminal rendering or parser dependency only if it passes performance review
 
 The VNC dependency should remain isolated behind `VNCKit`, because this area is likely to change after prototyping.
-

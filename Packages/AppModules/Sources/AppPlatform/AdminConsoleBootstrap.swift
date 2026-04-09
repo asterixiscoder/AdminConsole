@@ -1,3 +1,5 @@
+import ConnectionKit
+import CoreGraphics
 import DesktopCompositor
 import DesktopDomain
 import DesktopStore
@@ -6,9 +8,9 @@ import InputKit
 import PersistenceKit
 import RuntimeRegistry
 import SecurityKit
+import SSHKit
 import TelemetryKit
 import WindowManager
-import CoreGraphics
 
 public struct AdminConsoleBootstrap: Sendable {
     public let store: DesktopStore
@@ -40,6 +42,61 @@ public typealias PhaseZeroWindow = DesktopWindow
 public typealias PhaseZeroWindowID = WindowID
 public typealias PhaseZeroWindowKind = DesktopWindowKind
 public typealias PhaseZeroRect = NormalizedRect
+public typealias PhaseZeroTerminalState = TerminalSurfaceState
+
+public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
+    public var host: String
+    public var port: Int
+    public var username: String
+    public var password: String
+    public var terminalType: String
+    public var columns: Int
+    public var rows: Int
+    public var pixelWidth: Int
+    public var pixelHeight: Int
+
+    public init(
+        host: String,
+        port: Int = 22,
+        username: String,
+        password: String,
+        terminalType: String = "xterm-256color",
+        columns: Int = 120,
+        rows: Int = 32,
+        pixelWidth: Int = 1440,
+        pixelHeight: Int = 900
+    ) {
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.terminalType = terminalType
+        self.columns = columns
+        self.rows = rows
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+    }
+
+    public var runtimeConfiguration: SSHConnectionConfiguration {
+        SSHConnectionConfiguration(
+            connection: ConnectionDescriptor(
+                kind: .ssh,
+                host: host,
+                port: port,
+                displayName: "\(username)@\(host)"
+            ),
+            username: username,
+            password: password,
+            terminalType: terminalType,
+            terminalSize: TerminalSize(
+                columns: columns,
+                rows: rows,
+                pixelWidth: pixelWidth,
+                pixelHeight: pixelHeight
+            )
+        )
+    }
+}
 
 public actor PhaseZeroCoordinator {
     private let bootstrap: AdminConsoleBootstrap
@@ -55,7 +112,8 @@ public actor PhaseZeroCoordinator {
         }
 
         didStart = true
-        _ = await bootstrap.store.dispatch(.bootstrapPhaseZero)
+        let snapshot = await bootstrap.store.dispatch(.bootstrapPhaseZero)
+        await ensureRuntimes(for: snapshot)
         bootstrap.logger.log("Phase 0 bootstrap started")
     }
 
@@ -67,13 +125,11 @@ public actor PhaseZeroCoordinator {
         await bootstrap.store.currentSnapshot()
     }
 
-    public func openWindow(_ kind: PhaseZeroWindowKind) async {
-        let previous = await bootstrap.store.currentSnapshot()
+    @discardableResult
+    public func openWindow(_ kind: PhaseZeroWindowKind) async -> PhaseZeroWindowID? {
         let next = await bootstrap.store.dispatch(.openWindow(kind))
-
-        if next.windows.count > previous.windows.count, let window = next.windows.last {
-            _ = await bootstrap.runtimes.register(kind: runtimeKind(for: kind), for: window.id)
-        }
+        await ensureRuntimes(for: next)
+        return next.windows.last?.id
     }
 
     public func focusWindow(_ id: PhaseZeroWindowID) async {
@@ -110,6 +166,65 @@ public actor PhaseZeroCoordinator {
         _ = await bootstrap.store.dispatch(.noteInput(description))
     }
 
+    public func connectFocusedTerminal(using request: PhaseZeroSSHConnectionRequest) async {
+        guard !request.host.isEmpty, !request.username.isEmpty else {
+            await registerControlInput("SSH connect skipped: host or username missing")
+            return
+        }
+
+        let windowID: WindowID
+
+        if let focusedTerminal = await targetTerminalWindowID() {
+            windowID = focusedTerminal
+        } else if let opened = await openWindow(.terminal) {
+            windowID = opened
+        } else {
+            await registerControlInput("SSH connect failed: unable to create terminal window")
+            return
+        }
+
+        guard let runtime = await terminalRuntime(for: windowID) else {
+            await registerControlInput("SSH connect failed: runtime unavailable")
+            return
+        }
+
+        await focusWindow(windowID)
+        await registerControlInput("SSH connect: \(request.username)@\(request.host):\(request.port)")
+        await runtime.connect(using: request.runtimeConfiguration)
+    }
+
+    public func sendInputToFocusedTerminal(_ text: String) async {
+        guard let windowID = await targetTerminalWindowID(),
+              let runtime = await terminalRuntime(for: windowID) else {
+            await registerControlInput("Terminal input skipped: no focused terminal")
+            return
+        }
+
+        do {
+            try await runtime.send(text: text)
+            let summary = text.replacingOccurrences(of: "\n", with: "\\n")
+            await registerControlInput("Terminal input: \(summary.prefix(24))")
+        } catch {
+            await registerControlInput("Terminal input failed: \(error.localizedDescription)")
+        }
+    }
+
+    public func resizeFocusedTerminal(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) async {
+        guard let windowID = await targetTerminalWindowID(),
+              let runtime = await terminalRuntime(for: windowID) else {
+            return
+        }
+
+        await runtime.resize(
+            to: TerminalSize(
+                columns: columns,
+                rows: rows,
+                pixelWidth: pixelWidth,
+                pixelHeight: pixelHeight
+            )
+        )
+    }
+
     private func runtimeKind(for kind: PhaseZeroWindowKind) -> RuntimeHandle.Kind {
         switch kind {
         case .terminal:
@@ -120,6 +235,55 @@ public actor PhaseZeroCoordinator {
             return .browser
         case .vnc:
             return .vnc
+        }
+    }
+
+    private func ensureRuntimes(for snapshot: PhaseZeroSnapshot) async {
+        for window in snapshot.windows {
+            switch window.kind {
+            case .terminal:
+                if await bootstrap.runtimes.terminalRuntime(for: window.id) == nil {
+                    let runtime = makeTerminalRuntime(windowID: window.id)
+                    _ = await bootstrap.runtimes.registerTerminal(runtime, for: window.id)
+                    _ = await bootstrap.store.dispatch(
+                        .updateTerminalSurface(
+                            windowID: window.id,
+                            surface: await runtime.snapshot()
+                        )
+                    )
+                }
+            case .files, .browser, .vnc:
+                if await bootstrap.runtimes.handle(for: window.id) == nil {
+                    _ = await bootstrap.runtimes.register(kind: runtimeKind(for: window.kind), for: window.id)
+                }
+            }
+        }
+    }
+
+    private func targetTerminalWindowID() async -> WindowID? {
+        let snapshot = await bootstrap.store.currentSnapshot()
+
+        if let focusedWindowID = snapshot.focusedWindowID,
+           snapshot.windows.contains(where: { $0.id == focusedWindowID && $0.kind == .terminal }) {
+            return focusedWindowID
+        }
+
+        return snapshot.windows.last(where: { $0.kind == .terminal })?.id
+    }
+
+    private func terminalRuntime(for windowID: WindowID) async -> SSHTerminalRuntime? {
+        if let runtime = await bootstrap.runtimes.terminalRuntime(for: windowID) {
+            return runtime
+        }
+
+        let runtime = makeTerminalRuntime(windowID: windowID)
+        _ = await bootstrap.runtimes.registerTerminal(runtime, for: windowID)
+        return runtime
+    }
+
+    private func makeTerminalRuntime(windowID: WindowID) -> SSHTerminalRuntime {
+        SSHTerminalRuntime(windowID: windowID) { [store = bootstrap.store] surface in
+            _ = await store.dispatch(.updateTerminalSurface(windowID: windowID, surface: surface))
         }
     }
 }

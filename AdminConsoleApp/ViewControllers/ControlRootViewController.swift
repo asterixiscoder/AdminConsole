@@ -2,7 +2,7 @@ import AppPlatform
 import UIKit
 import WebKit
 
-final class ControlRootViewController: UIViewController {
+final class ControlRootViewController: UIViewController, UITextFieldDelegate {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
     private let summaryLabel = UILabel()
@@ -10,9 +10,16 @@ final class ControlRootViewController: UIViewController {
     private let focusedLabel = UILabel()
     private let cursorLabel = UILabel()
     private let inputLabel = UILabel()
+    private let terminalStatusLabel = UILabel()
+    private let terminalPreviewLabel = UILabel()
     private let trackpadView = UIView()
     private let trackpadCursor = UIView()
     private let keyboardHintLabel = UILabel()
+    private let hostField = UITextField()
+    private let portField = UITextField()
+    private let usernameField = UITextField()
+    private let passwordField = UITextField()
+    private let commandField = UITextField()
     private var updatesTask: Task<Void, Never>?
     private var latestSnapshot: PhaseZeroSnapshot?
 
@@ -33,21 +40,19 @@ final class ControlRootViewController: UIViewController {
             action: #selector(openBrowserPrototype)
         )
 
-        summaryLabel.text = "iPhone control scene for cursor, focus, shortcuts, and window orchestration."
+        summaryLabel.text = "iPhone control scene for cursor, focus, shortcuts, terminal orchestration, and SSH input."
         summaryLabel.font = .preferredFont(forTextStyle: .title3)
         summaryLabel.numberOfLines = 0
 
-        statusLabel.font = .preferredFont(forTextStyle: .body)
-        statusLabel.numberOfLines = 0
+        [statusLabel, focusedLabel, cursorLabel, inputLabel, terminalStatusLabel].forEach { label in
+            label.font = .preferredFont(forTextStyle: .body)
+            label.numberOfLines = 0
+        }
 
-        focusedLabel.font = .preferredFont(forTextStyle: .body)
-        focusedLabel.numberOfLines = 0
-
-        cursorLabel.font = .preferredFont(forTextStyle: .body)
-        cursorLabel.numberOfLines = 0
-
-        inputLabel.font = .preferredFont(forTextStyle: .body)
-        inputLabel.numberOfLines = 0
+        terminalPreviewLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        terminalPreviewLabel.textColor = .secondaryLabel
+        terminalPreviewLabel.numberOfLines = 0
+        terminalPreviewLabel.text = "No terminal output yet."
 
         keyboardHintLabel.text = """
         Keyboard prototype
@@ -55,7 +60,7 @@ final class ControlRootViewController: UIViewController {
         Cmd+2 Files
         Cmd+3 Browser
         Cmd+4 VNC
-        Arrow keys move cursor
+        Arrow keys move cursor unless terminal focus is active
         """
         keyboardHintLabel.font = .preferredFont(forTextStyle: .footnote)
         keyboardHintLabel.numberOfLines = 0
@@ -72,22 +77,29 @@ final class ControlRootViewController: UIViewController {
         trackpadCursor.layer.shadowColor = UIColor.systemBlue.cgColor
         trackpadCursor.layer.shadowOpacity = 0.3
         trackpadCursor.layer.shadowRadius = 8
-
         trackpadView.addSubview(trackpadCursor)
 
-        let openButtons = makeButtonsRow()
-        let infoCard = makeCard(arrangedSubviews: [summaryLabel, statusLabel, focusedLabel, cursorLabel, inputLabel])
+        let infoCard = makeCard(
+            arrangedSubviews: [
+                summaryLabel,
+                statusLabel,
+                focusedLabel,
+                cursorLabel,
+                inputLabel,
+                terminalStatusLabel,
+                terminalPreviewLabel
+            ]
+        )
         let trackpadCard = makeCard(arrangedSubviews: [trackpadView, keyboardHintLabel])
-        let actionsCard = makeCard(arrangedSubviews: [openButtons])
+        let actionsCard = makeCard(arrangedSubviews: [makeButtonsRow()])
+        let sshCard = makeCard(arrangedSubviews: [makeSSHControls()])
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.axis = .vertical
         stackView.spacing = 18
 
-        stackView.addArrangedSubview(infoCard)
-        stackView.addArrangedSubview(trackpadCard)
-        stackView.addArrangedSubview(actionsCard)
+        [infoCard, trackpadCard, actionsCard, sshCard].forEach(stackView.addArrangedSubview)
         scrollView.addSubview(stackView)
         view.addSubview(scrollView)
 
@@ -103,8 +115,9 @@ final class ControlRootViewController: UIViewController {
             stackView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -20),
             stackView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -40),
 
-            trackpadView.heightAnchor.constraint(equalToConstant: 220),
+            trackpadView.heightAnchor.constraint(equalToConstant: 220)
         ])
+
         trackpadCursor.translatesAutoresizingMaskIntoConstraints = true
         trackpadCursor.frame = CGRect(x: 14, y: 14, width: 20, height: 20)
 
@@ -135,20 +148,33 @@ final class ControlRootViewController: UIViewController {
     }
 
     override var keyCommands: [UIKeyCommand]? {
-        [
+        var commands = [
             makeKeyCommand("1", modifiers: .command, action: #selector(openTerminal), title: "Open Terminal"),
             makeKeyCommand("2", modifiers: .command, action: #selector(openFiles), title: "Open Files"),
             makeKeyCommand("3", modifiers: .command, action: #selector(openBrowserWindow), title: "Open Browser"),
-            makeKeyCommand("4", modifiers: .command, action: #selector(openVNC), title: "Open VNC"),
-            makeKeyCommand(UIKeyCommand.inputUpArrow, action: #selector(moveCursorUp), title: "Move Cursor Up"),
-            makeKeyCommand(UIKeyCommand.inputDownArrow, action: #selector(moveCursorDown), title: "Move Cursor Down"),
-            makeKeyCommand(UIKeyCommand.inputLeftArrow, action: #selector(moveCursorLeft), title: "Move Cursor Left"),
-            makeKeyCommand(UIKeyCommand.inputRightArrow, action: #selector(moveCursorRight), title: "Move Cursor Right")
+            makeKeyCommand("4", modifiers: .command, action: #selector(openVNC), title: "Open VNC")
         ]
+
+        if !routesHardwareKeyboardToTerminal {
+            commands.append(makeKeyCommand(UIKeyCommand.inputUpArrow, action: #selector(moveCursorUp), title: "Move Cursor Up"))
+            commands.append(makeKeyCommand(UIKeyCommand.inputDownArrow, action: #selector(moveCursorDown), title: "Move Cursor Down"))
+            commands.append(makeKeyCommand(UIKeyCommand.inputLeftArrow, action: #selector(moveCursorLeft), title: "Move Cursor Left"))
+            commands.append(makeKeyCommand(UIKeyCommand.inputRightArrow, action: #selector(moveCursorRight), title: "Move Cursor Right"))
+        }
+
+        return commands
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if let key = presses.compactMap(\.key).first {
+            if routesHardwareKeyboardToTerminal,
+               let terminalInput = terminalInput(for: key) {
+                Task {
+                    await AppEnvironment.phaseZero.sendInputToFocusedTerminal(terminalInput)
+                }
+                return
+            }
+
             let keyName = key.charactersIgnoringModifiers.isEmpty ? key.characters : key.charactersIgnoringModifiers
             Task {
                 await AppEnvironment.phaseZero.registerControlInput("Key press: \(keyName)")
@@ -192,6 +218,8 @@ final class ControlRootViewController: UIViewController {
 
         cursorLabel.text = "Cursor: x \(String(format: "%.2f", snapshot.cursor.x)), y \(String(format: "%.2f", snapshot.cursor.y))"
         inputLabel.text = "Last input: \(snapshot.lastInputDescription)"
+        terminalStatusLabel.text = terminalStatusText(snapshot: snapshot)
+        terminalPreviewLabel.text = terminalPreview(snapshot: snapshot)
 
         applyTrackpadCursor(snapshot: snapshot)
     }
@@ -252,6 +280,49 @@ final class ControlRootViewController: UIViewController {
         return stack
     }
 
+    private func makeSSHControls() -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+
+        let titleLabel = UILabel()
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.numberOfLines = 0
+        titleLabel.text = "SSH Terminal"
+
+        configureField(hostField, placeholder: "Host", textContentType: .URL)
+        configureField(portField, placeholder: "Port", keyboardType: .numberPad)
+        portField.text = "22"
+        configureField(usernameField, placeholder: "Username", textContentType: .username)
+        configureField(passwordField, placeholder: "Password", textContentType: .password)
+        passwordField.isSecureTextEntry = true
+        configureField(commandField, placeholder: "Command to send to focused terminal")
+        commandField.returnKeyType = .send
+
+        let connectButton = UIButton(type: .system)
+        connectButton.configuration = .filled()
+        connectButton.configuration?.title = "Connect Focused Terminal"
+        connectButton.addTarget(self, action: #selector(connectSSH), for: .touchUpInside)
+
+        let sendButton = UIButton(type: .system)
+        sendButton.configuration = .tinted()
+        sendButton.configuration?.title = "Send Command"
+        sendButton.addTarget(self, action: #selector(sendCommandToTerminal), for: .touchUpInside)
+
+        [
+            titleLabel,
+            hostField,
+            portField,
+            usernameField,
+            passwordField,
+            connectButton,
+            commandField,
+            sendButton
+        ].forEach(stack.addArrangedSubview)
+
+        return stack
+    }
+
     private func makeKeyCommand(
         _ input: String,
         modifiers: UIKeyModifierFlags = [],
@@ -281,6 +352,37 @@ final class ControlRootViewController: UIViewController {
     private func handleTrackpadTap() {
         Task {
             await AppEnvironment.phaseZero.registerControlInput("Trackpad tap")
+        }
+    }
+
+    @objc
+    private func connectSSH() {
+        view.endEditing(true)
+
+        guard let request = makeSSHRequest() else {
+            Task {
+                await AppEnvironment.phaseZero.registerControlInput("SSH connect skipped: invalid form")
+            }
+            return
+        }
+
+        Task {
+            await AppEnvironment.phaseZero.connectFocusedTerminal(using: request)
+        }
+    }
+
+    @objc
+    private func sendCommandToTerminal() {
+        guard let text = commandField.text,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        let command = text.hasSuffix("\n") ? text : text + "\n"
+        commandField.text = nil
+
+        Task {
+            await AppEnvironment.phaseZero.sendInputToFocusedTerminal(command)
         }
     }
 
@@ -340,6 +442,133 @@ final class ControlRootViewController: UIViewController {
     private func openBrowserPrototype() {
         let viewController = BrowserPrototypeViewController()
         navigationController?.pushViewController(viewController, animated: true)
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        switch textField {
+        case commandField:
+            sendCommandToTerminal()
+        case passwordField:
+            connectSSH()
+        default:
+            textField.resignFirstResponder()
+        }
+
+        return true
+    }
+
+    private var routesHardwareKeyboardToTerminal: Bool {
+        guard let terminalWindow = focusedTerminalWindow(snapshot: latestSnapshot),
+              let terminalState = terminalWindow.terminalState else {
+            return false
+        }
+
+        return terminalState.sessionState == .connected
+    }
+
+    private func configureField(
+        _ textField: UITextField,
+        placeholder: String,
+        keyboardType: UIKeyboardType = .default,
+        textContentType: UITextContentType? = nil
+    ) {
+        textField.borderStyle = .roundedRect
+        textField.placeholder = placeholder
+        textField.keyboardType = keyboardType
+        textField.autocapitalizationType = .none
+        textField.autocorrectionType = .no
+        textField.delegate = self
+        textField.returnKeyType = .done
+        textField.textContentType = textContentType
+    }
+
+    private func makeSSHRequest() -> PhaseZeroSSHConnectionRequest? {
+        let host = hostField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let username = usernameField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let password = passwordField.text ?? ""
+        let port = Int(portField.text ?? "") ?? 22
+
+        guard !host.isEmpty, !username.isEmpty, !password.isEmpty else {
+            return nil
+        }
+
+        let profile = latestSnapshot?.displayProfile
+        let width = Int((profile?.width ?? 1440) * (profile?.scale ?? 1.0))
+        let height = Int((profile?.height ?? 900) * (profile?.scale ?? 1.0))
+        let columns = max(80, Int((profile?.width ?? 1440) / 10))
+        let rows = max(24, Int((profile?.height ?? 900) / 22))
+
+        return PhaseZeroSSHConnectionRequest(
+            host: host,
+            port: port,
+            username: username,
+            password: password,
+            columns: columns,
+            rows: rows,
+            pixelWidth: width,
+            pixelHeight: height
+        )
+    }
+
+    private func focusedTerminalWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
+        guard let snapshot else {
+            return nil
+        }
+
+        if let focusedWindowID = snapshot.focusedWindowID,
+           let focusedWindow = snapshot.windows.first(where: { $0.id == focusedWindowID && $0.kind == .terminal }) {
+            return focusedWindow
+        }
+
+        return snapshot.windows.last(where: { $0.kind == .terminal })
+    }
+
+    private func terminalStatusText(snapshot: PhaseZeroSnapshot) -> String {
+        guard let terminalWindow = focusedTerminalWindow(snapshot: snapshot),
+              let terminalState = terminalWindow.terminalState else {
+            return "Terminal: no terminal window selected"
+        }
+
+        return """
+        Terminal: \(terminalState.connectionTitle)
+        State: \(terminalState.sessionState.rawValue.capitalized)
+        Status: \(terminalState.statusMessage)
+        Grid: \(terminalState.columns) x \(terminalState.rows)
+        """
+    }
+
+    private func terminalPreview(snapshot: PhaseZeroSnapshot) -> String {
+        guard let terminalState = focusedTerminalWindow(snapshot: snapshot)?.terminalState else {
+            return "No terminal output yet."
+        }
+
+        let lines = terminalState.transcript.split(separator: "\n", omittingEmptySubsequences: false)
+        return lines.suffix(10).joined(separator: "\n")
+    }
+
+    private func terminalInput(for key: UIKey) -> String? {
+        if key.modifierFlags.contains(.command) {
+            return nil
+        }
+
+        switch key.keyCode {
+        case .keyboardReturnOrEnter:
+            return "\n"
+        case .keyboardDeleteOrBackspace:
+            return "\u{7F}"
+        case .keyboardTab:
+            return "\t"
+        case .keyboardUpArrow:
+            return "\u{001B}[A"
+        case .keyboardDownArrow:
+            return "\u{001B}[B"
+        case .keyboardRightArrow:
+            return "\u{001B}[C"
+        case .keyboardLeftArrow:
+            return "\u{001B}[D"
+        default:
+            return key.characters.isEmpty ? nil : key.characters
+        }
     }
 
     private func moveCursor(deltaX: Double, deltaY: Double, description: String) {

@@ -27,6 +27,11 @@ let package = Package(
         .library(name: "SecurityKit", targets: ["SecurityKit"]),
         .library(name: "TelemetryKit", targets: ["TelemetryKit"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.90.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssh.git", from: "0.12.0"),
+        .package(url: "https://github.com/apple/swift-nio-transport-services.git", from: "1.26.0")
+    ],
     targets: [
         .target(
             name: "AppPlatform",
@@ -37,6 +42,8 @@ let package = Package(
                 "WindowManager",
                 "DesktopCompositor",
                 "InputKit",
+                "ConnectionKit",
+                "SSHKit",
                 "PersistenceKit",
                 "SecurityKit",
                 "TelemetryKit"
@@ -52,7 +59,10 @@ let package = Package(
         ),
         .target(
             name: "RuntimeRegistry",
-            dependencies: ["DesktopDomain"]
+            dependencies: [
+                "DesktopDomain",
+                "SSHKit"
+            ]
         ),
         .target(
             name: "WindowManager",
@@ -77,7 +87,11 @@ let package = Package(
             name: "SSHKit",
             dependencies: [
                 "DesktopDomain",
-                "ConnectionKit"
+                "ConnectionKit",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOFoundationCompat", package: "swift-nio"),
+                .product(name: "NIOSSH", package: "swift-nio-ssh"),
+                .product(name: "NIOTransportServices", package: "swift-nio-transport-services")
             ]
         ),
         .target(

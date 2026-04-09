@@ -2,9 +2,6 @@
 <Workspace
    version = "1.0">
    <FileRef
-      location = "group:AdminConsole.xcodeproj">
-   </FileRef>
-   <FileRef
-      location = "group:Packages/AppModules">
+      location = "self:AdminConsole.xcodeproj">
    </FileRef>
 </Workspace>

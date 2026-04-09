@@ -136,7 +136,7 @@ final class DesktopRootViewController: UIViewController {
         windowViews.removeAll()
 
         for window in snapshot.windows {
-            let panel = makeWindowPlaceholder(window: window, snapshot: snapshot)
+            let panel = makeWindowView(window: window, snapshot: snapshot)
             canvasView.addSubview(panel)
             windowViews[window.id.rawValue] = panel
         }
@@ -151,7 +151,7 @@ final class DesktopRootViewController: UIViewController {
         canvasView.bringSubviewToFront(cursorView)
     }
 
-    private func makeWindowPlaceholder(window: PhaseZeroWindow, snapshot: PhaseZeroSnapshot) -> UIView {
+    private func makeWindowView(window: PhaseZeroWindow, snapshot: PhaseZeroSnapshot) -> UIView {
         let frame = normalizedFrame(window.frame)
         let panel = UIView(frame: frame)
         panel.backgroundColor = color(for: window.kind)
@@ -167,22 +167,26 @@ final class DesktopRootViewController: UIViewController {
         chrome.layer.cornerRadius = 18
         chrome.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
 
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = window.title
-        label.textColor = .white
-        label.font = .preferredFont(forTextStyle: .headline)
+        let title = UILabel()
+        title.translatesAutoresizingMaskIntoConstraints = false
+        title.text = window.title
+        title.textColor = .white
+        title.font = .preferredFont(forTextStyle: .headline)
 
-        let detailLabel = UILabel()
-        detailLabel.translatesAutoresizingMaskIntoConstraints = false
-        detailLabel.text = window.id.rawValue.uuidString.prefix(8) + " • " + snapshot.lastInputDescription
-        detailLabel.textColor = UIColor.white.withAlphaComponent(0.66)
-        detailLabel.font = .preferredFont(forTextStyle: .footnote)
-        detailLabel.numberOfLines = 2
+        let subtitle = UILabel()
+        subtitle.translatesAutoresizingMaskIntoConstraints = false
+        subtitle.text = windowSubtitle(window: window, snapshot: snapshot)
+        subtitle.textColor = UIColor.white.withAlphaComponent(0.66)
+        subtitle.font = .preferredFont(forTextStyle: .footnote)
+        subtitle.numberOfLines = 2
+
+        let contentView = windowContentView(window: window)
+        contentView.translatesAutoresizingMaskIntoConstraints = false
 
         panel.addSubview(chrome)
-        chrome.addSubview(label)
-        panel.addSubview(detailLabel)
+        chrome.addSubview(title)
+        panel.addSubview(subtitle)
+        panel.addSubview(contentView)
 
         NSLayoutConstraint.activate([
             chrome.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
@@ -190,12 +194,17 @@ final class DesktopRootViewController: UIViewController {
             chrome.topAnchor.constraint(equalTo: panel.topAnchor),
             chrome.heightAnchor.constraint(equalToConstant: 44),
 
-            label.leadingAnchor.constraint(equalTo: chrome.leadingAnchor, constant: 16),
-            label.centerYAnchor.constraint(equalTo: chrome.centerYAnchor),
+            title.leadingAnchor.constraint(equalTo: chrome.leadingAnchor, constant: 16),
+            title.centerYAnchor.constraint(equalTo: chrome.centerYAnchor),
 
-            detailLabel.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 16),
-            detailLabel.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -16),
-            detailLabel.topAnchor.constraint(equalTo: chrome.bottomAnchor, constant: 16)
+            subtitle.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 16),
+            subtitle.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -16),
+            subtitle.topAnchor.constraint(equalTo: chrome.bottomAnchor, constant: 16),
+
+            contentView.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 16),
+            contentView.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -16),
+            contentView.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 14),
+            contentView.bottomAnchor.constraint(lessThanOrEqualTo: panel.bottomAnchor, constant: -16)
         ])
 
         return panel
@@ -220,6 +229,130 @@ final class DesktopRootViewController: UIViewController {
         case .vnc:
             return UIColor(red: 0.19, green: 0.15, blue: 0.14, alpha: 1.0)
         }
+    }
+
+    private func windowSubtitle(window: PhaseZeroWindow, snapshot: PhaseZeroSnapshot) -> String {
+        if let terminalState = window.terminalState {
+            return "\(terminalState.connectionTitle) • \(terminalState.statusMessage)"
+        }
+
+        return window.id.rawValue.uuidString.prefix(8) + " • " + snapshot.lastInputDescription
+    }
+
+    private func windowContentView(window: PhaseZeroWindow) -> UIView {
+        switch window.kind {
+        case .terminal:
+            return makeTerminalContent(window: window)
+        case .files:
+            return makePlaceholderContent(
+                title: "Sandbox workspace",
+                detail: "Local file manager module is still scaffolded, but the desktop shell can already keep focus and layout state."
+            )
+        case .browser:
+            return makePlaceholderContent(
+                title: "Browser runtime placeholder",
+                detail: "The web module remains hosted in-app. The next step is promoting the Browser spike into a managed desktop window."
+            )
+        case .vnc:
+            return makePlaceholderContent(
+                title: "VNC bridge placeholder",
+                detail: "VNC rendering will reuse the same desktop compositor and input routing path as the SSH terminal."
+            )
+        }
+    }
+
+    private func makeTerminalContent(window: PhaseZeroWindow) -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 10
+
+        let badgeLabel = UILabel()
+        badgeLabel.font = .preferredFont(forTextStyle: .caption1)
+        badgeLabel.textColor = badgeColor(for: window.terminalState)
+        badgeLabel.text = badgeTitle(for: window.terminalState)
+
+        let metaLabel = UILabel()
+        metaLabel.font = .preferredFont(forTextStyle: .footnote)
+        metaLabel.textColor = UIColor.white.withAlphaComponent(0.74)
+        metaLabel.numberOfLines = 0
+        metaLabel.text = terminalMetaText(window.terminalState)
+
+        let transcriptLabel = UILabel()
+        transcriptLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        transcriptLabel.textColor = UIColor.white.withAlphaComponent(0.92)
+        transcriptLabel.numberOfLines = 0
+        transcriptLabel.text = terminalTranscriptPreview(window.terminalState)
+
+        [badgeLabel, metaLabel, transcriptLabel].forEach(stack.addArrangedSubview)
+        return stack
+    }
+
+    private func makePlaceholderContent(title: String, detail: String) -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 8
+
+        let titleLabel = UILabel()
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.textColor = .white
+        titleLabel.numberOfLines = 0
+        titleLabel.text = title
+
+        let detailLabel = UILabel()
+        detailLabel.font = .preferredFont(forTextStyle: .body)
+        detailLabel.textColor = UIColor.white.withAlphaComponent(0.75)
+        detailLabel.numberOfLines = 0
+        detailLabel.text = detail
+
+        [titleLabel, detailLabel].forEach(stack.addArrangedSubview)
+        return stack
+    }
+
+    private func badgeTitle(for state: PhaseZeroTerminalState?) -> String {
+        switch state?.sessionState {
+        case .idle?:
+            return "Idle"
+        case .connecting?:
+            return "Connecting"
+        case .connected?:
+            return "Connected"
+        case .failed?:
+            return "Ended"
+        case nil:
+            return "Ready"
+        }
+    }
+
+    private func badgeColor(for state: PhaseZeroTerminalState?) -> UIColor {
+        switch state?.sessionState {
+        case .idle?:
+            return UIColor.white.withAlphaComponent(0.85)
+        case .connecting?:
+            return UIColor.systemOrange
+        case .connected?:
+            return UIColor.systemGreen
+        case .failed?:
+            return UIColor.systemRed
+        case nil:
+            return UIColor.white.withAlphaComponent(0.85)
+        }
+    }
+
+    private func terminalMetaText(_ state: PhaseZeroTerminalState?) -> String {
+        guard let state else {
+            return "Ready for SSH runtime."
+        }
+
+        return "\(state.connectionTitle)\n\(state.columns) x \(state.rows) • \(state.statusMessage)"
+    }
+
+    private func terminalTranscriptPreview(_ state: PhaseZeroTerminalState?) -> String {
+        guard let transcript = state?.transcript else {
+            return "No transcript yet."
+        }
+
+        let lines = transcript.split(separator: "\n", omittingEmptySubsequences: false)
+        return lines.suffix(14).joined(separator: "\n")
     }
 
     @objc

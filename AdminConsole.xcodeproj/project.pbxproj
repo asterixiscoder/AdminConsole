@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1B2C3D4E5F600000000006A /* AppPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000069 /* AppPlatform */; };
 		A1B2C3D4E5F6000000000060 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000000B /* AppDelegate.swift */; };
 		A1B2C3D4E5F6000000000061 /* ControlSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000000C /* ControlSceneDelegate.swift */; };
 		A1B2C3D4E5F6000000000062 /* DesktopSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */; };
@@ -16,6 +15,7 @@
 		A1B2C3D4E5F6000000000065 /* AdminConsoleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000010 /* AdminConsoleTests.swift */; };
 		A1B2C3D4E5F6000000000066 /* AdminConsoleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000011 /* AdminConsoleUITests.swift */; };
 		A1B2C3D4E5F6000000000067 /* AdminConsoleUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000012 /* AdminConsoleUITestsLaunchTests.swift */; };
+		A1B2C3D4E5F600000000006A /* AppPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000069 /* AppPlatform */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -36,8 +36,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		A1B2C3D4E5F6000000000009 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Packages/AppModules/Package.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F600000000000A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = AdminConsoleApp/Info.plist; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000009 /* Packages/AppModules/Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Packages/AppModules/Package.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000000A /* AdminConsoleApp/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = AdminConsoleApp/Info.plist; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000000B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000000C /* ControlSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlSceneDelegate.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSceneDelegate.swift; sourceTree = "<group>"; };
@@ -105,7 +105,7 @@
 				A1B2C3D4E5F600000000000C /* ControlSceneDelegate.swift */,
 				A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */,
 				A1B2C3D4E5F6000000000005 /* ViewControllers */,
-				A1B2C3D4E5F600000000000A /* Info.plist */,
+				A1B2C3D4E5F600000000000A /* AdminConsoleApp/Info.plist */,
 			);
 			path = AdminConsoleApp;
 			sourceTree = "<group>";
@@ -139,7 +139,7 @@
 		A1B2C3D4E5F6000000000008 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				A1B2C3D4E5F6000000000009 /* Package.swift */,
+				A1B2C3D4E5F6000000000009 /* Packages/AppModules/Package.swift */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -241,7 +241,7 @@
 			);
 			mainGroup = A1B2C3D4E5F6000000000002;
 			packageReferences = (
-				A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "AppModules" */,
+				A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */,
 			);
 			productRefGroup = A1B2C3D4E5F6000000000003 /* Products */;
 			projectDirPath = "";
@@ -371,9 +371,10 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 4A9M23K3GV;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AdminConsoleApp/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -396,9 +397,10 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 4A9M23K3GV;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AdminConsoleApp/Info.plist;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -556,7 +558,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "AppModules" */ = {
+		A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/AppModules;
 		};
@@ -565,11 +567,10 @@
 /* Begin XCSwiftPackageProductDependency section */
 		A1B2C3D4E5F6000000000069 /* AppPlatform */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "AppModules" */;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
 			productName = AppPlatform;
 		};
 /* End XCSwiftPackageProductDependency section */
-
 	};
 	rootObject = A1B2C3D4E5F6000000000001 /* Project object */;
 }

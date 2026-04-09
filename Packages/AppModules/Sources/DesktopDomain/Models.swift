@@ -31,6 +31,67 @@ public enum DesktopWindowKind: String, Codable, CaseIterable, Sendable {
     case vnc
 }
 
+public enum TerminalConnectionState: String, Codable, CaseIterable, Sendable {
+    case idle
+    case connecting
+    case connected
+    case failed
+}
+
+public struct TerminalSurfaceState: Codable, Equatable, Sendable {
+    public static let maximumTranscriptLength = 12_000
+
+    public var connectionTitle: String
+    public var sessionState: TerminalConnectionState
+    public var statusMessage: String
+    public var transcript: String
+    public var columns: Int
+    public var rows: Int
+
+    public init(
+        connectionTitle: String = "Terminal",
+        sessionState: TerminalConnectionState = .idle,
+        statusMessage: String = "Ready for SSH session",
+        transcript: String = "No SSH session yet.\nUse the iPhone control scene to connect.\n",
+        columns: Int = 120,
+        rows: Int = 32
+    ) {
+        self.connectionTitle = connectionTitle
+        self.sessionState = sessionState
+        self.statusMessage = statusMessage
+        self.transcript = Self.trimmedTranscript(transcript)
+        self.columns = columns
+        self.rows = rows
+    }
+
+    public static func idle(
+        title: String = "Terminal",
+        columns: Int = 120,
+        rows: Int = 32
+    ) -> TerminalSurfaceState {
+        TerminalSurfaceState(
+            connectionTitle: title,
+            sessionState: .idle,
+            statusMessage: "Ready for SSH session",
+            transcript: "No SSH session yet.\nUse the iPhone control scene to connect.\n",
+            columns: columns,
+            rows: rows
+        )
+    }
+
+    public mutating func appendOutput(_ text: String) {
+        transcript = Self.trimmedTranscript(transcript + text)
+    }
+
+    public static func trimmedTranscript(_ text: String) -> String {
+        guard text.count > maximumTranscriptLength else {
+            return text
+        }
+
+        return String(text.suffix(maximumTranscriptLength))
+    }
+}
+
 public struct NormalizedRect: Codable, Equatable, Sendable {
     public var x: Double
     public var y: Double
@@ -53,19 +114,22 @@ public struct DesktopWindow: Identifiable, Codable, Equatable, Sendable {
     public var title: String
     public var frame: NormalizedRect
     public var isFocused: Bool
+    public var terminalState: TerminalSurfaceState?
 
     public init(
         id: WindowID = WindowID(),
         kind: DesktopWindowKind,
         title: String,
         frame: NormalizedRect = .defaultWindow,
-        isFocused: Bool = false
+        isFocused: Bool = false,
+        terminalState: TerminalSurfaceState? = nil
     ) {
         self.id = id
         self.kind = kind
         self.title = title
         self.frame = frame
         self.isFocused = isFocused
+        self.terminalState = terminalState
     }
 }
 

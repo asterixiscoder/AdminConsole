@@ -1,5 +1,6 @@
 import DesktopDomain
 import Foundation
+import SSHKit
 
 public struct RuntimeHandle: Hashable, Sendable {
     public enum Kind: String, Sendable {
@@ -21,21 +22,37 @@ public struct RuntimeHandle: Hashable, Sendable {
 }
 
 public actor RuntimeRegistry {
-    private var runtimes: [WindowID: RuntimeHandle] = [:]
+    private var handles: [WindowID: RuntimeHandle] = [:]
+    private var terminalRuntimes: [WindowID: SSHTerminalRuntime] = [:]
 
     public init() {}
 
     public func register(kind: RuntimeHandle.Kind, for windowID: WindowID) -> RuntimeHandle {
         let handle = RuntimeHandle(windowID: windowID, kind: kind)
-        runtimes[windowID] = handle
+        handles[windowID] = handle
+        return handle
+    }
+
+    public func registerTerminal(_ runtime: SSHTerminalRuntime, for windowID: WindowID) -> RuntimeHandle {
+        let handle = RuntimeHandle(windowID: windowID, kind: .terminal)
+        handles[windowID] = handle
+        terminalRuntimes[windowID] = runtime
         return handle
     }
 
     public func handle(for windowID: WindowID) -> RuntimeHandle? {
-        runtimes[windowID]
+        handles[windowID]
     }
 
-    public func remove(windowID: WindowID) {
-        runtimes.removeValue(forKey: windowID)
+    public func terminalRuntime(for windowID: WindowID) -> SSHTerminalRuntime? {
+        terminalRuntimes[windowID]
+    }
+
+    public func remove(windowID: WindowID) async {
+        if let runtime = terminalRuntimes.removeValue(forKey: windowID) {
+            await runtime.disconnect()
+        }
+
+        handles.removeValue(forKey: windowID)
     }
 }
