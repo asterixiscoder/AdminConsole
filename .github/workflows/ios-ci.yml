@@ -1,0 +1,55 @@
+name: iOS CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-tests:
+    name: Swift Package Tests
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Xcode Version
+        run: xcodebuild -version
+
+      - name: Run Swift Package Tests
+        working-directory: Packages/AppModules
+        run: swift test --disable-sandbox
+
+  ios-build:
+    name: iOS Simulator Build
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Xcode Version
+        run: xcodebuild -version
+
+      - name: Build AdminConsole
+        run: |
+          xcodebuild \
+            -project AdminConsole.xcodeproj \
+            -scheme AdminConsoleApp \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/AdminConsoleDerivedData \
+            build CODE_SIGNING_ALLOWED=NO

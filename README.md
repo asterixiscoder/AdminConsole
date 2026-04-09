@@ -1,8 +1,79 @@
 # AdminConsole
 
-AdminConsole - iOS application that turns an iPhone plus an external display into a unified desktop-like environment. The iPhone acts as the control surface, while the external display renders the desktop workspace with terminal, files, web, and remote desktop windows.
+[![iOS CI](https://github.com/asterixiscoder/AdminConsole/actions/workflows/ios-ci.yml/badge.svg)](https://github.com/asterixiscoder/AdminConsole/actions/workflows/ios-ci.yml)
 
-This repository currently contains the project definition and architecture documentation for the first implementation phase.
+AdminConsole is an iOS application that turns an iPhone plus an external display into a unified desktop-like environment. The iPhone acts as the control surface, while the external display renders the desktop workspace with terminal, files, web, and remote desktop windows.
+
+The repository currently contains:
+
+- a working Xcode scaffold
+- a local Swift package for modular core logic
+- Phase 0 prototype wiring for multi-scene desktop state
+- architecture and roadmap documentation
+
+## Current Status
+
+- Xcode project and workspace scaffolded
+- `AppModules` connected to the app target
+- shared `DesktopStore` and `PhaseZeroCoordinator` in place
+- control scene and external desktop scene both wired to shared state
+- browser spike and keyboard/pointer prototype started
+
+## Repository Layout
+
+```text
+AdminConsole/
+├─ AdminConsole.xcodeproj
+├─ AdminConsole.xcworkspace
+├─ AdminConsoleApp/
+├─ AdminConsoleTests/
+├─ AdminConsoleUITests/
+├─ Packages/AppModules/
+├─ docs/
+├─ CONTRIBUTING.md
+└─ .github/workflows/
+```
+
+## Getting Started
+
+### Open In Xcode
+
+Open `AdminConsole.xcworkspace` in Xcode.
+
+### Local Checks
+
+Swift Package tests:
+
+```bash
+cd Packages/AppModules
+swift test --disable-sandbox
+```
+
+App build:
+
+```bash
+xcodebuild -project AdminConsole.xcodeproj \
+  -scheme AdminConsoleApp \
+  -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /tmp/AdminConsoleDerivedData \
+  build CODE_SIGNING_ALLOWED=NO
+```
+
+## Branching Model
+
+- `main` is the stable branch
+- `develop` is the integration branch
+- feature work should branch from `develop`
+
+Recommended branch prefixes:
+
+- `feature/`
+- `bugfix/`
+- `spike/`
+- `codex/`
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 
 ## Documentation Index
 
@@ -41,4 +112,3 @@ This repository currently contains the project definition and architecture docum
 3. Input must be centralized and routed predictably.
 4. Windowing must use resolution-independent geometry.
 5. Long-lived sessions must survive scene recreation and monitor reconnects.
-
