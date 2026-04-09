@@ -1,0 +1,575 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1B2C3D4E5F600000000006A /* AppPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000069 /* AppPlatform */; };
+		A1B2C3D4E5F6000000000060 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000000B /* AppDelegate.swift */; };
+		A1B2C3D4E5F6000000000061 /* ControlSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000000C /* ControlSceneDelegate.swift */; };
+		A1B2C3D4E5F6000000000062 /* DesktopSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */; };
+		A1B2C3D4E5F6000000000063 /* ControlRootViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000000E /* ControlRootViewController.swift */; };
+		A1B2C3D4E5F6000000000064 /* DesktopRootViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000000F /* DesktopRootViewController.swift */; };
+		A1B2C3D4E5F6000000000065 /* AdminConsoleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000010 /* AdminConsoleTests.swift */; };
+		A1B2C3D4E5F6000000000066 /* AdminConsoleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000011 /* AdminConsoleUITests.swift */; };
+		A1B2C3D4E5F6000000000067 /* AdminConsoleUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000012 /* AdminConsoleUITestsLaunchTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A1B2C3D4E5F6000000000033 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1B2C3D4E5F6000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1B2C3D4E5F6000000000030;
+			remoteInfo = AdminConsoleApp;
+		};
+		A1B2C3D4E5F6000000000034 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1B2C3D4E5F6000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1B2C3D4E5F6000000000030;
+			remoteInfo = AdminConsoleApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A1B2C3D4E5F6000000000009 /* Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Packages/AppModules/Package.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000000A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = AdminConsoleApp/Info.plist; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000000B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000000C /* ControlSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlSceneDelegate.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSceneDelegate.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000000E /* ControlRootViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlRootViewController.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000000F /* DesktopRootViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopRootViewController.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000010 /* AdminConsoleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminConsoleTests.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000011 /* AdminConsoleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminConsoleUITests.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000012 /* AdminConsoleUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminConsoleUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000013 /* AdminConsoleApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AdminConsoleApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F6000000000014 /* AdminConsoleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AdminConsoleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F6000000000015 /* AdminConsoleUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AdminConsoleUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A1B2C3D4E5F6000000000021 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F600000000006A /* AppPlatform in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6000000000024 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6000000000027 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A1B2C3D4E5F6000000000002 = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6000000000004 /* AdminConsoleApp */,
+				A1B2C3D4E5F6000000000006 /* AdminConsoleTests */,
+				A1B2C3D4E5F6000000000007 /* AdminConsoleUITests */,
+				A1B2C3D4E5F6000000000008 /* Packages */,
+				A1B2C3D4E5F6000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6000000000013 /* AdminConsoleApp.app */,
+				A1B2C3D4E5F6000000000014 /* AdminConsoleTests.xctest */,
+				A1B2C3D4E5F6000000000015 /* AdminConsoleUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6000000000004 /* AdminConsoleApp */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F600000000000B /* AppDelegate.swift */,
+				A1B2C3D4E5F600000000000C /* ControlSceneDelegate.swift */,
+				A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */,
+				A1B2C3D4E5F6000000000005 /* ViewControllers */,
+				A1B2C3D4E5F600000000000A /* Info.plist */,
+			);
+			path = AdminConsoleApp;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6000000000005 /* ViewControllers */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F600000000000E /* ControlRootViewController.swift */,
+				A1B2C3D4E5F600000000000F /* DesktopRootViewController.swift */,
+			);
+			path = ViewControllers;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6000000000006 /* AdminConsoleTests */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6000000000010 /* AdminConsoleTests.swift */,
+			);
+			path = AdminConsoleTests;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6000000000007 /* AdminConsoleUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6000000000011 /* AdminConsoleUITests.swift */,
+				A1B2C3D4E5F6000000000012 /* AdminConsoleUITestsLaunchTests.swift */,
+			);
+			path = AdminConsoleUITests;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F6000000000008 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F6000000000009 /* Package.swift */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A1B2C3D4E5F6000000000030 /* AdminConsoleApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D4E5F6000000000041 /* Build configuration list for PBXNativeTarget "AdminConsoleApp" */;
+			buildPhases = (
+				A1B2C3D4E5F6000000000020 /* Sources */,
+				A1B2C3D4E5F6000000000021 /* Frameworks */,
+				A1B2C3D4E5F6000000000022 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AdminConsoleApp;
+			packageProductDependencies = (
+				A1B2C3D4E5F6000000000069 /* AppPlatform */,
+			);
+			productName = AdminConsoleApp;
+			productReference = A1B2C3D4E5F6000000000013 /* AdminConsoleApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A1B2C3D4E5F6000000000031 /* AdminConsoleTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D4E5F6000000000042 /* Build configuration list for PBXNativeTarget "AdminConsoleTests" */;
+			buildPhases = (
+				A1B2C3D4E5F6000000000023 /* Sources */,
+				A1B2C3D4E5F6000000000024 /* Frameworks */,
+				A1B2C3D4E5F6000000000025 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1B2C3D4E5F6000000000035 /* PBXTargetDependency */,
+			);
+			name = AdminConsoleTests;
+			packageProductDependencies = (
+			);
+			productName = AdminConsoleTests;
+			productReference = A1B2C3D4E5F6000000000014 /* AdminConsoleTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A1B2C3D4E5F6000000000032 /* AdminConsoleUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D4E5F6000000000043 /* Build configuration list for PBXNativeTarget "AdminConsoleUITests" */;
+			buildPhases = (
+				A1B2C3D4E5F6000000000026 /* Sources */,
+				A1B2C3D4E5F6000000000027 /* Frameworks */,
+				A1B2C3D4E5F6000000000028 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A1B2C3D4E5F6000000000036 /* PBXTargetDependency */,
+			);
+			name = AdminConsoleUITests;
+			packageProductDependencies = (
+			);
+			productName = AdminConsoleUITests;
+			productReference = A1B2C3D4E5F6000000000015 /* AdminConsoleUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A1B2C3D4E5F6000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				ORGANIZATIONNAME = AdminConsole;
+				TargetAttributes = {
+					A1B2C3D4E5F6000000000030 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					A1B2C3D4E5F6000000000031 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = A1B2C3D4E5F6000000000030;
+					};
+					A1B2C3D4E5F6000000000032 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = A1B2C3D4E5F6000000000030;
+					};
+				};
+			};
+			buildConfigurationList = A1B2C3D4E5F6000000000040 /* Build configuration list for PBXProject "AdminConsole" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A1B2C3D4E5F6000000000002;
+			packageReferences = (
+				A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "AppModules" */,
+			);
+			productRefGroup = A1B2C3D4E5F6000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A1B2C3D4E5F6000000000030 /* AdminConsoleApp */,
+				A1B2C3D4E5F6000000000031 /* AdminConsoleTests */,
+				A1B2C3D4E5F6000000000032 /* AdminConsoleUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A1B2C3D4E5F6000000000022 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6000000000025 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6000000000028 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A1B2C3D4E5F6000000000020 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F6000000000060 /* AppDelegate.swift in Sources */,
+				A1B2C3D4E5F6000000000061 /* ControlSceneDelegate.swift in Sources */,
+				A1B2C3D4E5F6000000000062 /* DesktopSceneDelegate.swift in Sources */,
+				A1B2C3D4E5F6000000000063 /* ControlRootViewController.swift in Sources */,
+				A1B2C3D4E5F6000000000064 /* DesktopRootViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6000000000023 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F6000000000065 /* AdminConsoleTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1B2C3D4E5F6000000000026 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1B2C3D4E5F6000000000066 /* AdminConsoleUITests.swift in Sources */,
+				A1B2C3D4E5F6000000000067 /* AdminConsoleUITestsLaunchTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A1B2C3D4E5F6000000000035 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1B2C3D4E5F6000000000030 /* AdminConsoleApp */;
+			targetProxy = A1B2C3D4E5F6000000000033 /* PBXContainerItemProxy */;
+		};
+		A1B2C3D4E5F6000000000036 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1B2C3D4E5F6000000000030 /* AdminConsoleApp */;
+			targetProxy = A1B2C3D4E5F6000000000034 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A1B2C3D4E5F6000000000050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A1B2C3D4E5F6000000000051 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A1B2C3D4E5F6000000000052 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AdminConsoleApp/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.AdminConsole;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A1B2C3D4E5F6000000000053 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AdminConsoleApp/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.AdminConsole;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		A1B2C3D4E5F6000000000054 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.AdminConsoleTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AdminConsoleApp.app/AdminConsoleApp";
+			};
+			name = Debug;
+		};
+		A1B2C3D4E5F6000000000055 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.AdminConsoleTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AdminConsoleApp.app/AdminConsoleApp";
+			};
+			name = Release;
+		};
+		A1B2C3D4E5F6000000000056 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.AdminConsoleUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = AdminConsoleApp;
+			};
+			name = Debug;
+		};
+		A1B2C3D4E5F6000000000057 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.AdminConsoleUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = AdminConsoleApp;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A1B2C3D4E5F6000000000040 /* Build configuration list for PBXProject "AdminConsole" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4E5F6000000000050 /* Debug */,
+				A1B2C3D4E5F6000000000051 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3D4E5F6000000000041 /* Build configuration list for PBXNativeTarget "AdminConsoleApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4E5F6000000000052 /* Debug */,
+				A1B2C3D4E5F6000000000053 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3D4E5F6000000000042 /* Build configuration list for PBXNativeTarget "AdminConsoleTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4E5F6000000000054 /* Debug */,
+				A1B2C3D4E5F6000000000055 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3D4E5F6000000000043 /* Build configuration list for PBXNativeTarget "AdminConsoleUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4E5F6000000000056 /* Debug */,
+				A1B2C3D4E5F6000000000057 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "AppModules" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AppModules;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1B2C3D4E5F6000000000069 /* AppPlatform */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "AppModules" */;
+			productName = AppPlatform;
+		};
+/* End XCSwiftPackageProductDependency section */
+
+	};
+	rootObject = A1B2C3D4E5F6000000000001 /* Project object */;
+}
