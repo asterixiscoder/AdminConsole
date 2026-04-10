@@ -91,4 +91,13 @@ final class TerminalEmulatorTests: XCTestCase {
         XCTAssertEqual(cell.style.foreground, .ansi256(202))
         XCTAssertEqual(cell.style.background, .rgb(red: 10, green: 20, blue: 30))
     }
+
+    func testParsesOSCTitleUpdatesAcrossChunks() {
+        var emulator = TerminalEmulator(columns: 12, rows: 1)
+
+        emulator.consume("\u{001B}]0;build")
+        emulator.consume(" host\u{0007}")
+
+        XCTAssertEqual(emulator.currentScreenTitle(), "build host")
+    }
 }

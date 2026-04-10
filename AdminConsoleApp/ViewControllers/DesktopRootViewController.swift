@@ -10,6 +10,7 @@ final class DesktopRootViewController: UIViewController {
     private var updatesTask: Task<Void, Never>?
     private var latestSnapshot: PhaseZeroSnapshot?
     private var windowViews: [UUID: UIView] = [:]
+    private var terminalSelectionPreviews: [UUID: PhaseZeroTerminalSelection] = [:]
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -277,12 +278,27 @@ final class DesktopRootViewController: UIViewController {
         metaLabel.numberOfLines = 0
         metaLabel.text = terminalMetaText(window.terminalState)
 
-        let transcriptLabel = UILabel()
-        transcriptLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        transcriptLabel.numberOfLines = 0
-        transcriptLabel.attributedText = terminalAttributedPreview(window.terminalState)
+        let transcriptView = TerminalViewportTextView()
+        transcriptView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        transcriptView.backgroundColor = UIColor.black.withAlphaComponent(0.12)
+        transcriptView.textContainerInset = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+        transcriptView.textContainer.lineFragmentPadding = 0
+        transcriptView.layer.cornerRadius = 12
+        transcriptView.isEditable = false
+        transcriptView.isSelectable = false
+        transcriptView.isScrollEnabled = false
+        transcriptView.windowID = window.id
+        transcriptView.terminalState = window.terminalState
+        transcriptView.selectionPreview = terminalSelectionPreviews[window.id.rawValue] ?? window.terminalState?.selection
+        transcriptView.attributedText = terminalAttributedPreview(window.terminalState, selection: transcriptView.selectionPreview)
+        transcriptView.heightAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
 
-        [badgeLabel, metaLabel, transcriptLabel].forEach(stack.addArrangedSubview)
+        let selectionGesture = UILongPressGestureRecognizer(target: self, action: #selector(handleTerminalSelectionGesture(_:)))
+        selectionGesture.minimumPressDuration = 0
+        selectionGesture.allowableMovement = .greatestFiniteMagnitude
+        transcriptView.addGestureRecognizer(selectionGesture)
+
+        [badgeLabel, metaLabel, transcriptView].forEach(stack.addArrangedSubview)
         return stack
     }
 
@@ -342,10 +358,17 @@ final class DesktopRootViewController: UIViewController {
             return "Ready for SSH runtime."
         }
 
+        if let screenTitle = state.screenTitle, !screenTitle.isEmpty {
+            return "\(state.connectionTitle)\nTitle: \(screenTitle)\n\(state.columns) x \(state.rows) • \(state.statusMessage)"
+        }
+
         return "\(state.connectionTitle)\n\(state.columns) x \(state.rows) • \(state.statusMessage)"
     }
 
-    private func terminalAttributedPreview(_ state: PhaseZeroTerminalState?) -> NSAttributedString {
+    private func terminalAttributedPreview(
+        _ state: PhaseZeroTerminalState?,
+        selection: PhaseZeroTerminalSelection? = nil
+    ) -> NSAttributedString {
         guard let state else {
             return NSAttributedString(
                 string: "No terminal screen yet.",
@@ -358,13 +381,18 @@ final class DesktopRootViewController: UIViewController {
 
         let attributed = NSMutableAttributedString()
         let lines = state.buffer.renderedStyledLines(insertingCursor: state.sessionState == .connected)
+        let effectiveSelection = selection ?? state.selection
 
         for (lineIndex, line) in lines.enumerated() {
-            for cell in line.cells {
+            for (columnIndex, cell) in line.cells.enumerated() {
+                let point = PhaseZeroTerminalGridPoint(row: lineIndex, column: columnIndex)
                 attributed.append(
                     NSAttributedString(
                         string: cell.character,
-                        attributes: terminalAttributes(for: cell.style)
+                        attributes: terminalAttributes(
+                            for: cell.style,
+                            isSelected: effectiveSelection.map { state.buffer.contains(point, in: $0) } ?? false
+                        )
                     )
                 )
             }
@@ -382,20 +410,25 @@ final class DesktopRootViewController: UIViewController {
         return attributed
     }
 
-    private func terminalAttributes(for style: PhaseZeroTerminalTextStyle) -> [NSAttributedString.Key: Any] {
+    private func terminalAttributes(
+        for style: PhaseZeroTerminalTextStyle,
+        isSelected: Bool = false
+    ) -> [NSAttributedString.Key: Any] {
         let fontSize: CGFloat = 13
         let baseForeground = terminalUIColor(for: style.foreground, fallback: UIColor.white.withAlphaComponent(0.92))
         let baseBackground = terminalUIColor(for: style.background, fallback: .clear)
         let foreground = style.isInverse ? baseBackground.resolvedVisibleColor(fallback: UIColor.white.withAlphaComponent(0.92)) : baseForeground
         let background = style.isInverse ? baseForeground : baseBackground
+        let resolvedForeground = isSelected ? UIColor.white : foreground
+        let resolvedBackground = isSelected ? UIColor.systemBlue.withAlphaComponent(0.45) : background
 
         var attributes: [NSAttributedString.Key: Any] = [
             .font: terminalFont(size: fontSize, style: style),
-            .foregroundColor: foreground
+            .foregroundColor: resolvedForeground
         ]
 
-        if !background.isFullyTransparent {
-            attributes[.backgroundColor] = background
+        if !resolvedBackground.isFullyTransparent {
+            attributes[.backgroundColor] = resolvedBackground
         }
 
         if style.isUnderlined {
@@ -507,6 +540,68 @@ final class DesktopRootViewController: UIViewController {
             await AppEnvironment.phaseZero.registerControlInput("Desktop tap focus: \(selectedWindow.title)")
         }
     }
+
+    @objc
+    private func handleTerminalSelectionGesture(_ gesture: UILongPressGestureRecognizer) {
+        guard let transcriptView = gesture.view as? TerminalViewportTextView,
+              let terminalState = transcriptView.terminalState else {
+            return
+        }
+
+        let point = gesture.location(in: transcriptView)
+        let geometry = TerminalSelectionGeometry(
+            columns: terminalState.columns,
+            rows: terminalState.rows,
+            viewportSize: transcriptView.bounds.size,
+            insets: TerminalViewportInsets(
+                top: transcriptView.textContainerInset.top,
+                left: transcriptView.textContainerInset.left,
+                bottom: transcriptView.textContainerInset.bottom,
+                right: transcriptView.textContainerInset.right
+            )
+        )
+
+        switch gesture.state {
+        case .began:
+            let anchor = geometry.gridPoint(for: point)
+            let selection = PhaseZeroTerminalSelection(anchor: anchor, focus: anchor)
+            transcriptView.selectionAnchor = anchor
+            transcriptView.selectionPreview = selection
+            terminalSelectionPreviews[transcriptView.windowID.rawValue] = selection
+            transcriptView.attributedText = terminalAttributedPreview(terminalState, selection: selection)
+            Task {
+                await AppEnvironment.phaseZero.focusWindow(transcriptView.windowID)
+            }
+        case .changed:
+            guard let anchor = transcriptView.selectionAnchor else {
+                return
+            }
+
+            let selection = PhaseZeroTerminalSelection(anchor: anchor, focus: geometry.gridPoint(for: point))
+            transcriptView.selectionPreview = selection
+            terminalSelectionPreviews[transcriptView.windowID.rawValue] = selection
+            transcriptView.attributedText = terminalAttributedPreview(terminalState, selection: selection)
+        case .ended:
+            let selection = transcriptView.selectionPreview
+            if let selection {
+                terminalSelectionPreviews.removeValue(forKey: transcriptView.windowID.rawValue)
+                Task {
+                    await AppEnvironment.phaseZero.focusWindow(transcriptView.windowID)
+                    await AppEnvironment.phaseZero.updateFocusedTerminalSelection(selection)
+                    await AppEnvironment.phaseZero.registerControlInput("Terminal selection updated")
+                }
+            }
+            transcriptView.selectionAnchor = nil
+            transcriptView.selectionPreview = nil
+        case .cancelled, .failed:
+            terminalSelectionPreviews.removeValue(forKey: transcriptView.windowID.rawValue)
+            transcriptView.selectionAnchor = nil
+            transcriptView.selectionPreview = nil
+            transcriptView.attributedText = terminalAttributedPreview(terminalState, selection: terminalState.selection)
+        default:
+            break
+        }
+    }
 }
 
 private extension UIColor {
@@ -520,4 +615,11 @@ private extension UIColor {
         }
         return self
     }
+}
+
+private final class TerminalViewportTextView: UITextView {
+    var windowID: PhaseZeroWindowID = PhaseZeroWindowID()
+    var terminalState: PhaseZeroTerminalState?
+    var selectionAnchor: PhaseZeroTerminalGridPoint?
+    var selectionPreview: PhaseZeroTerminalSelection?
 }

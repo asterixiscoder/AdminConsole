@@ -175,6 +175,15 @@ public actor SSHTerminalRuntime {
         }
     }
 
+    public func updateSelection(_ selection: TerminalSelection?) async {
+        state.setSelection(selection)
+        await publishState()
+    }
+
+    public func selectedText() -> String? {
+        state.selectedText()
+    }
+
     private func establishTransport(using configuration: SSHConnectionConfiguration) async throws -> Transport {
         let group = NIOTSEventLoopGroup(loopCount: 1)
         let shellFutureBox = ShellFutureBox()
@@ -302,6 +311,7 @@ public actor SSHTerminalRuntime {
 
     private func appendTerminalOutput(_ text: String) {
         emulator.consume(text)
+        state.screenTitle = emulator.currentScreenTitle()
         state.transcript = emulator.makeTranscript()
         state.replaceBuffer(emulator.makeBufferSnapshot())
     }
@@ -309,6 +319,7 @@ public actor SSHTerminalRuntime {
     private func synchronizeStateFromEmulator(columns: Int, rows: Int) {
         state.columns = columns
         state.rows = rows
+        state.screenTitle = emulator.currentScreenTitle()
         state.transcript = emulator.makeTranscript()
         state.replaceBuffer(emulator.makeBufferSnapshot())
     }

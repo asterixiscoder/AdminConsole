@@ -51,6 +51,8 @@ public typealias PhaseZeroRect = NormalizedRect
 public typealias PhaseZeroTerminalState = TerminalSurfaceState
 public typealias PhaseZeroTerminalColor = TerminalColor
 public typealias PhaseZeroTerminalTextStyle = TerminalTextStyle
+public typealias PhaseZeroTerminalGridPoint = TerminalGridPoint
+public typealias PhaseZeroTerminalSelection = TerminalSelection
 
 public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
     public var host: String
@@ -255,6 +257,28 @@ public actor PhaseZeroCoordinator {
                 pixelHeight: pixelHeight
             )
         )
+    }
+
+    public func updateFocusedTerminalSelection(_ selection: PhaseZeroTerminalSelection?) async {
+        guard let windowID = await targetTerminalWindowID(),
+              let runtime = await terminalRuntime(for: windowID) else {
+            return
+        }
+
+        await runtime.updateSelection(selection)
+    }
+
+    public func clearFocusedTerminalSelection() async {
+        await updateFocusedTerminalSelection(nil)
+    }
+
+    public func selectedTextForFocusedTerminal() async -> String? {
+        guard let windowID = await targetTerminalWindowID(),
+              let runtime = await terminalRuntime(for: windowID) else {
+            return nil
+        }
+
+        return await runtime.selectedText()
     }
 
     private func runtimeKind(for kind: PhaseZeroWindowKind) -> RuntimeHandle.Kind {

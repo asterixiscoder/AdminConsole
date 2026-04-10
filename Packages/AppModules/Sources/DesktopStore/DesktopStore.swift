@@ -94,7 +94,7 @@ public actor DesktopStore {
 
                 var updated = item
                 updated.terminalState = surface
-                updated.title = surface.connectionTitle
+                updated.title = surface.displayTitle
                 return updated
             }
         case let .updateDisplayProfile(profile):

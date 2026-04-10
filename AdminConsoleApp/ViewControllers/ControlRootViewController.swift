@@ -11,7 +11,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
     private let cursorLabel = UILabel()
     private let inputLabel = UILabel()
     private let terminalStatusLabel = UILabel()
-    private let terminalPreviewLabel = UILabel()
+    private let terminalPreviewView = UITextView()
     private let trackpadView = UIView()
     private let trackpadCursor = UIView()
     private let keyboardHintLabel = UILabel()
@@ -49,10 +49,16 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
             label.numberOfLines = 0
         }
 
-        terminalPreviewLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        terminalPreviewLabel.textColor = .secondaryLabel
-        terminalPreviewLabel.numberOfLines = 0
-        terminalPreviewLabel.text = "No terminal output yet."
+        terminalPreviewView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        terminalPreviewView.textColor = .secondaryLabel
+        terminalPreviewView.text = "No terminal output yet."
+        terminalPreviewView.backgroundColor = .clear
+        terminalPreviewView.isEditable = false
+        terminalPreviewView.isSelectable = true
+        terminalPreviewView.isScrollEnabled = true
+        terminalPreviewView.textContainerInset = .zero
+        terminalPreviewView.textContainer.lineFragmentPadding = 0
+        terminalPreviewView.heightAnchor.constraint(equalToConstant: 180).isActive = true
 
         keyboardHintLabel.text = """
         Keyboard prototype
@@ -60,6 +66,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         Cmd+2 Files
         Cmd+3 Browser
         Cmd+4 VNC
+        Cmd+V Paste clipboard to terminal
         Arrow keys move cursor unless terminal focus is active
         """
         keyboardHintLabel.font = .preferredFont(forTextStyle: .footnote)
@@ -87,7 +94,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
                 cursorLabel,
                 inputLabel,
                 terminalStatusLabel,
-                terminalPreviewLabel
+                terminalPreviewView
             ]
         )
         let trackpadCard = makeCard(arrangedSubviews: [trackpadView, keyboardHintLabel])
@@ -152,7 +159,8 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
             makeKeyCommand("1", modifiers: .command, action: #selector(openTerminal), title: "Open Terminal"),
             makeKeyCommand("2", modifiers: .command, action: #selector(openFiles), title: "Open Files"),
             makeKeyCommand("3", modifiers: .command, action: #selector(openBrowserWindow), title: "Open Browser"),
-            makeKeyCommand("4", modifiers: .command, action: #selector(openVNC), title: "Open VNC")
+            makeKeyCommand("4", modifiers: .command, action: #selector(openVNC), title: "Open VNC"),
+            makeKeyCommand("v", modifiers: .command, action: #selector(pasteClipboardToTerminal), title: "Paste Clipboard to Terminal")
         ]
 
         if !routesHardwareKeyboardToTerminal {
@@ -219,7 +227,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         cursorLabel.text = "Cursor: x \(String(format: "%.2f", snapshot.cursor.x)), y \(String(format: "%.2f", snapshot.cursor.y))"
         inputLabel.text = "Last input: \(snapshot.lastInputDescription)"
         terminalStatusLabel.text = terminalStatusText(snapshot: snapshot)
-        terminalPreviewLabel.text = terminalPreview(snapshot: snapshot)
+        terminalPreviewView.text = terminalPreview(snapshot: snapshot)
 
         applyTrackpadCursor(snapshot: snapshot)
     }
@@ -309,6 +317,31 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         sendButton.configuration?.title = "Send Command"
         sendButton.addTarget(self, action: #selector(sendCommandToTerminal), for: .touchUpInside)
 
+        let copyVisibleButton = UIButton(type: .system)
+        copyVisibleButton.configuration = .plain()
+        copyVisibleButton.configuration?.title = "Copy Visible Screen"
+        copyVisibleButton.addTarget(self, action: #selector(copyVisibleTerminalScreen), for: .touchUpInside)
+
+        let copyTranscriptButton = UIButton(type: .system)
+        copyTranscriptButton.configuration = .plain()
+        copyTranscriptButton.configuration?.title = "Copy Full Transcript"
+        copyTranscriptButton.addTarget(self, action: #selector(copyTerminalTranscript), for: .touchUpInside)
+
+        let copySelectionButton = UIButton(type: .system)
+        copySelectionButton.configuration = .plain()
+        copySelectionButton.configuration?.title = "Copy Active Selection"
+        copySelectionButton.addTarget(self, action: #selector(copyTerminalSelection), for: .touchUpInside)
+
+        let clearSelectionButton = UIButton(type: .system)
+        clearSelectionButton.configuration = .plain()
+        clearSelectionButton.configuration?.title = "Clear Selection"
+        clearSelectionButton.addTarget(self, action: #selector(clearTerminalSelection), for: .touchUpInside)
+
+        let pasteClipboardButton = UIButton(type: .system)
+        pasteClipboardButton.configuration = .plain()
+        pasteClipboardButton.configuration?.title = "Paste Clipboard to Terminal"
+        pasteClipboardButton.addTarget(self, action: #selector(pasteClipboardToTerminal), for: .touchUpInside)
+
         [
             titleLabel,
             hostField,
@@ -317,7 +350,12 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
             passwordField,
             connectButton,
             commandField,
-            sendButton
+            sendButton,
+            pasteClipboardButton,
+            copySelectionButton,
+            clearSelectionButton,
+            copyVisibleButton,
+            copyTranscriptButton
         ].forEach(stack.addArrangedSubview)
 
         return stack
@@ -383,6 +421,73 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
 
         Task {
             await AppEnvironment.phaseZero.sendInputToFocusedTerminal(command)
+        }
+    }
+
+    @objc
+    private func copyVisibleTerminalScreen() {
+        guard let terminalState = focusedTerminalWindow(snapshot: latestSnapshot)?.terminalState else {
+            return
+        }
+
+        UIPasteboard.general.string = terminalState.buffer.viewportText(
+            insertingCursor: terminalState.sessionState == .connected
+        )
+
+        Task {
+            await AppEnvironment.phaseZero.registerControlInput("Copied visible terminal screen")
+        }
+    }
+
+    @objc
+    private func copyTerminalTranscript() {
+        guard let terminalState = focusedTerminalWindow(snapshot: latestSnapshot)?.terminalState else {
+            return
+        }
+
+        UIPasteboard.general.string = terminalState.transcript
+
+        Task {
+            await AppEnvironment.phaseZero.registerControlInput("Copied terminal transcript")
+        }
+    }
+
+    @objc
+    private func pasteClipboardToTerminal() {
+        guard let clipboardText = UIPasteboard.general.string,
+              !clipboardText.isEmpty else {
+            Task {
+                await AppEnvironment.phaseZero.registerControlInput("Clipboard paste skipped: clipboard is empty")
+            }
+            return
+        }
+
+        Task {
+            await AppEnvironment.phaseZero.sendInputToFocusedTerminal(clipboardText)
+        }
+    }
+
+    @objc
+    private func copyTerminalSelection() {
+        Task {
+            guard let selectedText = await AppEnvironment.phaseZero.selectedTextForFocusedTerminal(),
+                  !selectedText.isEmpty else {
+                await AppEnvironment.phaseZero.registerControlInput("Copy selection skipped: no active terminal selection")
+                return
+            }
+
+            await MainActor.run {
+                UIPasteboard.general.string = selectedText
+            }
+            await AppEnvironment.phaseZero.registerControlInput("Copied active terminal selection")
+        }
+    }
+
+    @objc
+    private func clearTerminalSelection() {
+        Task {
+            await AppEnvironment.phaseZero.clearFocusedTerminalSelection()
+            await AppEnvironment.phaseZero.registerControlInput("Cleared terminal selection")
         }
     }
 
@@ -531,10 +636,21 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
 
         return """
         Terminal: \(terminalState.connectionTitle)
+        Screen: \(terminalState.screenTitle ?? "none")
         State: \(terminalState.sessionState.rawValue.capitalized)
         Status: \(terminalState.statusMessage)
         Grid: \(terminalState.columns) x \(terminalState.rows)
+        Selection: \(terminalSelectionSummary(terminalState.selection))
         """
+    }
+
+    private func terminalSelectionSummary(_ selection: PhaseZeroTerminalSelection?) -> String {
+        guard let selection else {
+            return "none"
+        }
+
+        let normalized = selection.normalized
+        return "r\(normalized.start.row):c\(normalized.start.column) -> r\(normalized.end.row):c\(normalized.end.column)"
     }
 
     private func terminalPreview(snapshot: PhaseZeroSnapshot) -> String {

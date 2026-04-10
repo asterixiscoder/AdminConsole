@@ -1,41 +1,55 @@
 import Foundation
 
 struct VT100Parser {
+    struct ParseResult {
+        var transcript: String = ""
+        var screenTitle: String?
+    }
+
     private enum State {
         case ground
         case escape
         case csi(String)
-        case osc
-        case oscEscape
+        case osc(String)
+        case oscEscape(String)
     }
 
     private var state: State = .ground
 
-    mutating func consume(_ text: String, into screen: inout TerminalScreenBuffer) -> String {
-        var transcript = ""
+    mutating func consume(_ text: String, into screen: inout TerminalScreenBuffer) -> ParseResult {
+        var result = ParseResult()
 
         for scalar in text.unicodeScalars {
             switch state {
             case .ground:
-                handleGround(scalar, screen: &screen, transcript: &transcript)
+                handleGround(scalar, screen: &screen, transcript: &result.transcript)
             case .escape:
-                handleEscape(scalar, screen: &screen, transcript: &transcript)
+                handleEscape(scalar, screen: &screen, transcript: &result.transcript)
             case .csi(let sequence):
                 handleCSI(scalar, existing: sequence, screen: &screen)
-            case .osc:
+            case .osc(let sequence):
                 if scalar == "\u{0007}" {
+                    finalizeOSC(sequence, result: &result)
                     state = .ground
                 } else if scalar == "\u{001B}" {
-                    state = .oscEscape
+                    state = .oscEscape(sequence)
+                } else {
+                    state = .osc(sequence + String(scalar))
                 }
-            case .oscEscape:
-                state = scalar == "\\" ? .ground : .osc
+            case .oscEscape(let sequence):
+                if scalar == "\\" {
+                    finalizeOSC(sequence, result: &result)
+                    state = .ground
+                } else {
+                    state = .osc(sequence)
+                }
             }
         }
 
-        return transcript
+        result.transcript = result.transcript
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "")
+        return result
     }
 
     private mutating func handleGround(
@@ -78,7 +92,7 @@ struct VT100Parser {
         case "[":
             state = .csi("")
         case "]":
-            state = .osc
+            state = .osc("")
         case "7":
             screen.saveCursor()
             state = .ground
@@ -191,5 +205,24 @@ struct VT100Parser {
         return raw
             .split(separator: ";", omittingEmptySubsequences: false)
             .map { Int($0) ?? 0 }
+    }
+
+    private func finalizeOSC(_ sequence: String, result: inout ParseResult) {
+        let components = sequence.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let command = components.first.flatMap({ Int($0) }) else {
+            return
+        }
+
+        let value = components.count > 1 ? String(components[1]) : ""
+        guard !value.isEmpty else {
+            return
+        }
+
+        switch command {
+        case 0, 1, 2:
+            result.screenTitle = value
+        default:
+            break
+        }
     }
 }

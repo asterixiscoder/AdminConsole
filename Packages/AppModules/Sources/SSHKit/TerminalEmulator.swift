@@ -5,10 +5,12 @@ struct TerminalEmulator {
     private var parser = VT100Parser()
     private var screen: TerminalScreenBuffer
     private var transcript: String
+    private var screenTitle: String?
 
     init(columns: Int, rows: Int, initialTranscript: String? = nil) {
         self.screen = TerminalScreenBuffer(columns: columns, rows: rows)
         self.transcript = ""
+        self.screenTitle = nil
 
         if let initialTranscript, !initialTranscript.isEmpty {
             consume(initialTranscript)
@@ -19,6 +21,7 @@ struct TerminalEmulator {
         parser = VT100Parser()
         screen = TerminalScreenBuffer(columns: columns, rows: rows)
         transcript = ""
+        screenTitle = nil
 
         if let initialTranscript, !initialTranscript.isEmpty {
             consume(initialTranscript)
@@ -34,9 +37,12 @@ struct TerminalEmulator {
             return
         }
 
-        let plainText = parser.consume(text, into: &screen)
-        if !plainText.isEmpty {
-            transcript = TerminalSurfaceState.trimmedTranscript(transcript + plainText)
+        let result = parser.consume(text, into: &screen)
+        if !result.transcript.isEmpty {
+            transcript = TerminalSurfaceState.trimmedTranscript(transcript + result.transcript)
+        }
+        if let screenTitle = result.screenTitle {
+            self.screenTitle = screenTitle
         }
     }
 
@@ -46,6 +52,10 @@ struct TerminalEmulator {
 
     func makeTranscript() -> String {
         transcript
+    }
+
+    func currentScreenTitle() -> String? {
+        screenTitle
     }
 }
 
