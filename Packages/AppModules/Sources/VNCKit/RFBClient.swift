@@ -146,8 +146,31 @@ public actor RFBClient {
     }
 
     public func click(normalizedX: Double, normalizedY: Double) async throws {
-        try await movePointer(normalizedX: normalizedX, normalizedY: normalizedY, buttonMask: 1)
+        try await click(normalizedX: normalizedX, normalizedY: normalizedY, buttonMask: 1)
+    }
+
+    public func click(normalizedX: Double, normalizedY: Double, buttonMask: UInt8) async throws {
+        try await movePointer(normalizedX: normalizedX, normalizedY: normalizedY, buttonMask: buttonMask)
         try await movePointer(normalizedX: normalizedX, normalizedY: normalizedY, buttonMask: 0)
+    }
+
+    public func pressPointer(normalizedX: Double, normalizedY: Double, buttonMask: UInt8) async throws {
+        try await movePointer(normalizedX: normalizedX, normalizedY: normalizedY, buttonMask: buttonMask)
+    }
+
+    public func releasePointer(normalizedX: Double, normalizedY: Double, buttonMask: UInt8) async throws {
+        try await movePointer(normalizedX: normalizedX, normalizedY: normalizedY, buttonMask: buttonMask)
+    }
+
+    public func scroll(normalizedX: Double, normalizedY: Double, buttonMask: UInt8, steps: Int = 1) async throws {
+        guard steps > 0 else {
+            return
+        }
+
+        for _ in 0..<steps {
+            try await movePointer(normalizedX: normalizedX, normalizedY: normalizedY, buttonMask: buttonMask)
+            try await movePointer(normalizedX: normalizedX, normalizedY: normalizedY, buttonMask: 0)
+        }
     }
 
     public func send(text: String) async throws {

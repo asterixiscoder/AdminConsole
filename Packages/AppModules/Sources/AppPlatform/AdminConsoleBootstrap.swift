@@ -59,6 +59,8 @@ public typealias PhaseZeroFilesState = FilesSurfaceState
 public typealias PhaseZeroFilesEntry = FilesEntry
 public typealias PhaseZeroVNCState = VNCSurfaceState
 public typealias PhaseZeroVNCQualityPreset = VNCQualityPreset
+public typealias PhaseZeroVNCPointerButton = VNCRuntime.PointerButton
+public typealias PhaseZeroVNCScrollDirection = VNCRuntime.ScrollDirection
 
 public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
     public var host: String
@@ -454,13 +456,37 @@ public actor PhaseZeroCoordinator {
     }
 
     public func clickFocusedVNC() async {
+        await clickFocusedVNC(button: .primary)
+    }
+
+    public func clickFocusedVNC(button: PhaseZeroVNCPointerButton) async {
         guard let windowID = await targetVNCWindowID(),
               let runtime = await vncRuntime(for: windowID) else {
-            await registerControlInput("VNC click skipped: no focused VNC window")
+            await registerControlInput("VNC \(button.rawValue) click skipped: no focused VNC window")
             return
         }
 
-        await runtime.click()
+        await runtime.click(button: button)
+    }
+
+    public func togglePrimaryDragInFocusedVNC() async {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            await registerControlInput("VNC drag skipped: no focused VNC window")
+            return
+        }
+
+        await runtime.toggleDrag(button: .primary)
+    }
+
+    public func scrollFocusedVNC(_ direction: PhaseZeroVNCScrollDirection, steps: Int = 1) async {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            await registerControlInput("VNC wheel skipped: no focused VNC window")
+            return
+        }
+
+        await runtime.scroll(direction, steps: steps)
     }
 
     public func sendInputToFocusedVNC(_ text: String) async {

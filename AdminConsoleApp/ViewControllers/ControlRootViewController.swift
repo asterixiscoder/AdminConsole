@@ -34,6 +34,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private let vncInputField = UITextField()
     private let vncQualityControl = UISegmentedControl(items: ["Low", "Balanced", "High"])
     private let vncTrackpadSwitch = UISwitch()
+    private let vncDragButton = UIButton(type: .system)
     private var updatesTask: Task<Void, Never>?
     private var latestSnapshot: PhaseZeroSnapshot?
     private var isAwaitingFilesExport = false
@@ -108,6 +109,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         Cmd+4 VNC
         Cmd+V Paste clipboard to terminal
         Arrow keys move cursor unless terminal or VNC focus is active
+        Drag mode keeps the primary VNC mouse button pressed while you move
         """
         keyboardHintLabel.font = .preferredFont(forTextStyle: .footnote)
         keyboardHintLabel.numberOfLines = 0
@@ -283,6 +285,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         vncStatusLabel.text = vncStatusText(snapshot: snapshot)
         vncPreviewView.text = vncPreview(snapshot: snapshot)
         refreshFilesEntries(snapshot: snapshot)
+        updateVNCDragButton(snapshot: snapshot)
 
         applyTrackpadCursor(snapshot: snapshot)
     }
@@ -552,15 +555,46 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
         let clickButton = UIButton(type: .system)
         clickButton.configuration = .plain()
-        clickButton.configuration?.title = "Primary Click"
+        clickButton.configuration?.title = "Primary"
         clickButton.addTarget(self, action: #selector(clickFocusedVNC), for: .touchUpInside)
+
+        let secondaryClickButton = UIButton(type: .system)
+        secondaryClickButton.configuration = .plain()
+        secondaryClickButton.configuration?.title = "Secondary"
+        secondaryClickButton.addTarget(self, action: #selector(secondaryClickFocusedVNC), for: .touchUpInside)
+
+        let middleClickButton = UIButton(type: .system)
+        middleClickButton.configuration = .plain()
+        middleClickButton.configuration?.title = "Middle"
+        middleClickButton.addTarget(self, action: #selector(middleClickFocusedVNC), for: .touchUpInside)
 
         let qualityButton = UIButton(type: .system)
         qualityButton.configuration = .plain()
         qualityButton.configuration?.title = "Cycle Quality"
         qualityButton.addTarget(self, action: #selector(cycleVNCQuality), for: .touchUpInside)
 
-        [sendButton, clickButton, qualityButton].forEach(buttons.addArrangedSubview)
+        [sendButton, clickButton, secondaryClickButton, middleClickButton].forEach(buttons.addArrangedSubview)
+
+        let pointerModeButtons = UIStackView()
+        pointerModeButtons.axis = .horizontal
+        pointerModeButtons.spacing = 8
+        pointerModeButtons.distribution = .fillEqually
+
+        vncDragButton.configuration = .plain()
+        vncDragButton.configuration?.title = "Start Drag"
+        vncDragButton.addTarget(self, action: #selector(toggleVNCPrimaryDrag), for: .touchUpInside)
+
+        let wheelUpButton = UIButton(type: .system)
+        wheelUpButton.configuration = .plain()
+        wheelUpButton.configuration?.title = "Wheel Up"
+        wheelUpButton.addTarget(self, action: #selector(scrollVNCWheelUp), for: .touchUpInside)
+
+        let wheelDownButton = UIButton(type: .system)
+        wheelDownButton.configuration = .plain()
+        wheelDownButton.configuration?.title = "Wheel Down"
+        wheelDownButton.addTarget(self, action: #selector(scrollVNCWheelDown), for: .touchUpInside)
+
+        [vncDragButton, wheelUpButton, wheelDownButton, qualityButton].forEach(pointerModeButtons.addArrangedSubview)
 
         let clipboardButtons = UIStackView()
         clipboardButtons.axis = .horizontal
@@ -591,6 +625,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             connectButton,
             vncInputField,
             buttons,
+            pointerModeButtons,
             clipboardButtons,
             vncPreviewView
         ].forEach(stack.addArrangedSubview)
@@ -630,7 +665,11 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private func handleTrackpadTap() {
         Task {
             if self.routesPointerToVNC {
-                await AppEnvironment.phaseZero.clickFocusedVNC()
+                if self.isVNCPrimaryDragActive(snapshot: self.latestSnapshot) {
+                    await AppEnvironment.phaseZero.registerControlInput("Trackpad tap ignored while VNC drag is active")
+                } else {
+                    await AppEnvironment.phaseZero.clickFocusedVNC()
+                }
             }
             await AppEnvironment.phaseZero.registerControlInput("Trackpad tap")
         }
@@ -839,9 +878,49 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     }
 
     @objc
+    private func secondaryClickFocusedVNC() {
+        Task {
+            await AppEnvironment.phaseZero.clickFocusedVNC(button: .secondary)
+            await AppEnvironment.phaseZero.registerControlInput("VNC secondary click")
+        }
+    }
+
+    @objc
+    private func middleClickFocusedVNC() {
+        Task {
+            await AppEnvironment.phaseZero.clickFocusedVNC(button: .middle)
+            await AppEnvironment.phaseZero.registerControlInput("VNC middle click")
+        }
+    }
+
+    @objc
     private func cycleVNCQuality() {
         Task {
             await AppEnvironment.phaseZero.cycleQualityPresetForFocusedVNC()
+        }
+    }
+
+    @objc
+    private func toggleVNCPrimaryDrag() {
+        Task {
+            await AppEnvironment.phaseZero.togglePrimaryDragInFocusedVNC()
+            await AppEnvironment.phaseZero.registerControlInput("VNC drag toggled")
+        }
+    }
+
+    @objc
+    private func scrollVNCWheelUp() {
+        Task {
+            await AppEnvironment.phaseZero.scrollFocusedVNC(.up)
+            await AppEnvironment.phaseZero.registerControlInput("VNC wheel up")
+        }
+    }
+
+    @objc
+    private func scrollVNCWheelDown() {
+        Task {
+            await AppEnvironment.phaseZero.scrollFocusedVNC(.down)
+            await AppEnvironment.phaseZero.registerControlInput("VNC wheel down")
         }
     }
 
@@ -1200,12 +1279,15 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             return "VNC: no VNC window selected"
         }
 
+        let activeButtons = vncState.activePointerButtons.isEmpty ? "none" : vncState.activePointerButtons.joined(separator: ", ")
+
         return """
         Remote: \(vncState.connectionTitle)
         State: \(vncState.sessionState.rawValue.capitalized)
         Status: \(vncState.statusMessage)
         Quality: \(vncState.qualityPreset)
         Pointer: x \(String(format: "%.2f", vncState.remotePointer.x)), y \(String(format: "%.2f", vncState.remotePointer.y))
+        Active Buttons: \(activeButtons)
         Bells: \(vncState.bellCount)
         Remote Clipboard: \((vncState.remoteClipboardText?.isEmpty == false) ? "available" : "empty")
         """
@@ -1217,6 +1299,20 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         }
 
         return vncState.frame.renderedText
+    }
+
+    private func updateVNCDragButton(snapshot: PhaseZeroSnapshot) {
+        let isDragging = isVNCPrimaryDragActive(snapshot: snapshot)
+        vncDragButton.configuration?.title = isDragging ? "End Drag" : "Start Drag"
+        vncDragButton.configuration?.baseForegroundColor = isDragging ? .systemRed : nil
+    }
+
+    private func isVNCPrimaryDragActive(snapshot: PhaseZeroSnapshot?) -> Bool {
+        guard let vncState = focusedVNCWindow(snapshot: snapshot)?.vncState else {
+            return false
+        }
+
+        return vncState.activePointerButtons.contains("primary")
     }
 
     private func refreshFilesEntries(snapshot: PhaseZeroSnapshot) {

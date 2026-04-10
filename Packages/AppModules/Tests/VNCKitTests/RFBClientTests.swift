@@ -40,6 +40,17 @@ final class RFBClientTests: XCTestCase {
         XCTAssertEqual(Array(key), [0xC2, 0xF2, 0xEA, 0, 0, 0, 0, 0])
     }
 
+    func testVNCPointerButtonMasksMatchRFBSpec() {
+        XCTAssertEqual(VNCRuntime.PointerButton.primary.mask, 1)
+        XCTAssertEqual(VNCRuntime.PointerButton.middle.mask, 2)
+        XCTAssertEqual(VNCRuntime.PointerButton.secondary.mask, 4)
+    }
+
+    func testVNCScrollDirectionMasksMatchRFBSpec() {
+        XCTAssertEqual(VNCRuntime.ScrollDirection.up.mask, 8)
+        XCTAssertEqual(VNCRuntime.ScrollDirection.down.mask, 16)
+    }
+
     func testHextileDecoderAppliesBackgroundAndColoredSubrectangles() throws {
         var payload = Data([0x1E])
         payload.append(pixelBytes(0x101010FF))

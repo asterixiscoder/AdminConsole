@@ -607,6 +607,7 @@ public struct VNCSurfaceState: Codable, Equatable, Sendable {
     public var qualityPreset: String
     public var isTrackpadModeEnabled: Bool
     public var remotePointer: CursorState
+    public var activePointerButtons: [String]
     public var remoteClipboardText: String?
     public var bellCount: Int
     public var recentEvents: [String]
@@ -620,6 +621,7 @@ public struct VNCSurfaceState: Codable, Equatable, Sendable {
         qualityPreset: String = "balanced",
         isTrackpadModeEnabled: Bool = true,
         remotePointer: CursorState = CursorState(x: 0.32, y: 0.40),
+        activePointerButtons: [String] = [],
         remoteClipboardText: String? = nil,
         bellCount: Int = 0,
         recentEvents: [String] = []
@@ -632,6 +634,7 @@ public struct VNCSurfaceState: Codable, Equatable, Sendable {
         self.qualityPreset = qualityPreset
         self.isTrackpadModeEnabled = isTrackpadModeEnabled
         self.remotePointer = remotePointer
+        self.activePointerButtons = activePointerButtons
         self.remoteClipboardText = remoteClipboardText
         self.bellCount = max(0, bellCount)
         self.recentEvents = Array(recentEvents.suffix(Self.maximumEventLogCount))

@@ -5,6 +5,37 @@ import Foundation
 public actor VNCRuntime {
     public enum PointerButton: String, Sendable {
         case primary
+        case middle
+        case secondary
+
+        var mask: UInt8 {
+            switch self {
+            case .primary:
+                return 1 << 0
+            case .middle:
+                return 1 << 1
+            case .secondary:
+                return 1 << 2
+            }
+        }
+
+        var displayName: String {
+            rawValue.capitalized
+        }
+    }
+
+    public enum ScrollDirection: String, Sendable {
+        case up
+        case down
+
+        var mask: UInt8 {
+            switch self {
+            case .up:
+                return 1 << 3
+            case .down:
+                return 1 << 4
+            }
+        }
     }
 
     private let windowID: WindowID
@@ -12,6 +43,7 @@ public actor VNCRuntime {
     private var surface: VNCSurfaceState
     private var configuration: VNCSessionConfiguration?
     private var client: RFBClient?
+    private var pressedButtons: Set<PointerButton> = []
 
     public init(
         windowID: WindowID,
@@ -31,6 +63,7 @@ public actor VNCRuntime {
         await disconnect()
 
         self.configuration = configuration
+        pressedButtons.removeAll()
         surface = VNCSurfaceState(
             connectionTitle: configuration.connection.displayName,
             sessionState: .connecting,
@@ -97,6 +130,8 @@ public actor VNCRuntime {
             await client.disconnect()
         }
         client = nil
+        pressedButtons.removeAll()
+        surface.activePointerButtons = []
 
         if surface.sessionState == .connected || surface.sessionState == .connecting {
             surface.sessionState = .failed
@@ -119,10 +154,12 @@ public actor VNCRuntime {
         do {
             try await client?.movePointer(
                 normalizedX: surface.remotePointer.x,
-                normalizedY: surface.remotePointer.y
+                normalizedY: surface.remotePointer.y,
+                buttonMask: currentButtonMask
             )
             surface.statusMessage = "Remote pointer moved"
             surface.appendEvent(pointerSummary(prefix: "Pointer"))
+            syncPressedButtonsIntoSurface()
             await publish()
         } catch {
             await presentTransportFailure(error)
@@ -135,15 +172,87 @@ public actor VNCRuntime {
         }
 
         do {
-            switch button {
-            case .primary:
-                try await client?.click(
-                    normalizedX: surface.remotePointer.x,
-                    normalizedY: surface.remotePointer.y
-                )
-            }
-            surface.statusMessage = "\(button.rawValue.capitalized) click sent"
-            surface.appendEvent("\(button.rawValue.capitalized) click at \(pointerCoordinatesSummary())")
+            try await client?.click(
+                normalizedX: surface.remotePointer.x,
+                normalizedY: surface.remotePointer.y,
+                buttonMask: button.mask
+            )
+            surface.statusMessage = "\(button.displayName) click sent"
+            surface.appendEvent("\(button.displayName) click at \(pointerCoordinatesSummary())")
+            await publish()
+        } catch {
+            await presentTransportFailure(error)
+        }
+    }
+
+    public func press(button: PointerButton) async {
+        guard surface.sessionState == .connected else {
+            return
+        }
+
+        pressedButtons.insert(button)
+
+        do {
+            try await client?.pressPointer(
+                normalizedX: surface.remotePointer.x,
+                normalizedY: surface.remotePointer.y,
+                buttonMask: currentButtonMask
+            )
+            syncPressedButtonsIntoSurface()
+            surface.statusMessage = "\(button.displayName) button held"
+            surface.appendEvent("\(button.displayName) down at \(pointerCoordinatesSummary())")
+            await publish()
+        } catch {
+            pressedButtons.remove(button)
+            await presentTransportFailure(error)
+        }
+    }
+
+    public func release(button: PointerButton) async {
+        guard surface.sessionState == .connected else {
+            return
+        }
+
+        pressedButtons.remove(button)
+
+        do {
+            try await client?.releasePointer(
+                normalizedX: surface.remotePointer.x,
+                normalizedY: surface.remotePointer.y,
+                buttonMask: currentButtonMask
+            )
+            syncPressedButtonsIntoSurface()
+            surface.statusMessage = "\(button.displayName) button released"
+            surface.appendEvent("\(button.displayName) up at \(pointerCoordinatesSummary())")
+            await publish()
+        } catch {
+            pressedButtons.insert(button)
+            await presentTransportFailure(error)
+        }
+    }
+
+    public func toggleDrag(button: PointerButton = .primary) async {
+        if pressedButtons.contains(button) {
+            await release(button: button)
+        } else {
+            await press(button: button)
+        }
+    }
+
+    public func scroll(_ direction: ScrollDirection, steps: Int = 1) async {
+        guard surface.sessionState == .connected else {
+            return
+        }
+
+        do {
+            try await client?.scroll(
+                normalizedX: surface.remotePointer.x,
+                normalizedY: surface.remotePointer.y,
+                buttonMask: direction.mask,
+                steps: steps
+            )
+            surface.statusMessage = "Wheel \(direction.rawValue) sent"
+            surface.appendEvent("Wheel \(direction.rawValue) at \(pointerCoordinatesSummary())")
             await publish()
         } catch {
             await presentTransportFailure(error)
@@ -245,6 +354,16 @@ public actor VNCRuntime {
         )
     }
 
+    private var currentButtonMask: UInt8 {
+        pressedButtons.reduce(0) { $0 | $1.mask }
+    }
+
+    private func syncPressedButtonsIntoSurface() {
+        surface.activePointerButtons = pressedButtons
+            .map(\.rawValue)
+            .sorted()
+    }
+
     private func makePreviewLines(from snapshot: RFBFramebufferSnapshot) -> [String] {
         guard snapshot.width > 0, snapshot.height > 0, !snapshot.pixels.isEmpty else {
             return [
@@ -292,6 +411,8 @@ public actor VNCRuntime {
     }
 
     private func presentTransportFailure(_ error: Error) async {
+        pressedButtons.removeAll()
+        surface.activePointerButtons = []
         surface.sessionState = .failed
         surface.statusMessage = error.localizedDescription
         surface.appendEvent("Transport failure")
