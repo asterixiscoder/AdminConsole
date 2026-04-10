@@ -360,6 +360,16 @@ final class DesktopRootViewController: UIViewController {
         metaLabel.numberOfLines = 0
         metaLabel.text = vncMetaText(window.vncState)
 
+        if let image = vncFramebufferImage(window.vncState) {
+            let imageView = UIImageView(image: image)
+            imageView.contentMode = .scaleAspectFit
+            imageView.clipsToBounds = true
+            imageView.layer.cornerRadius = 12
+            imageView.backgroundColor = UIColor.black.withAlphaComponent(0.18)
+            imageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
+            stack.addArrangedSubview(imageView)
+        }
+
         let framebufferView = UITextView()
         framebufferView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
         framebufferView.backgroundColor = UIColor.black.withAlphaComponent(0.12)
@@ -494,6 +504,37 @@ final class DesktopRootViewController: UIViewController {
 
         let events = state.recentEvents.suffix(3).joined(separator: " | ")
         return "\(state.connectionTitle)\nQuality: \(state.qualityPreset) • Trackpad: \(state.isTrackpadModeEnabled ? "on" : "off")\n\(state.statusMessage)\n\(events)"
+    }
+
+    private func vncFramebufferImage(_ state: PhaseZeroVNCState?) -> UIImage? {
+        guard let frame = state?.frame, frame.hasPixelBuffer else {
+            return nil
+        }
+
+        let bytesPerRow = frame.pixelWidth * MemoryLayout<UInt32>.size
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+            .union(.byteOrder32Big)
+
+        let data = frame.rgbaPixels.withUnsafeBytes { Data($0) }
+        guard let provider = CGDataProvider(data: data as CFData),
+              let cgImage = CGImage(
+                width: frame.pixelWidth,
+                height: frame.pixelHeight,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo,
+                provider: provider,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+              ) else {
+            return nil
+        }
+
+        return UIImage(cgImage: cgImage)
     }
 
     private func filesEntriesText(_ state: PhaseZeroFilesState?) -> String {

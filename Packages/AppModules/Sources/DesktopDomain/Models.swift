@@ -548,12 +548,25 @@ public struct VNCFrameSnapshot: Codable, Equatable, Sendable {
     public var columns: Int
     public var rows: Int
     public var lines: [String]
+    public var pixelWidth: Int
+    public var pixelHeight: Int
+    public var rgbaPixels: [UInt32]
 
-    public init(columns: Int = 72, rows: Int = 20, lines: [String] = []) {
+    public init(
+        columns: Int = 72,
+        rows: Int = 20,
+        lines: [String] = [],
+        pixelWidth: Int = 0,
+        pixelHeight: Int = 0,
+        rgbaPixels: [UInt32] = []
+    ) {
         self.columns = max(1, columns)
         self.rows = max(1, rows)
         let normalizedLines = Array(lines.prefix(self.rows))
         self.lines = normalizedLines + Array(repeating: "", count: max(0, self.rows - normalizedLines.count))
+        self.pixelWidth = max(0, pixelWidth)
+        self.pixelHeight = max(0, pixelHeight)
+        self.rgbaPixels = rgbaPixels
     }
 
     public static func placeholder(
@@ -576,6 +589,10 @@ public struct VNCFrameSnapshot: Codable, Equatable, Sendable {
 
     public var renderedText: String {
         lines.joined(separator: "\n")
+    }
+
+    public var hasPixelBuffer: Bool {
+        pixelWidth > 0 && pixelHeight > 0 && rgbaPixels.count == pixelWidth * pixelHeight
     }
 }
 
