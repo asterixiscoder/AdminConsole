@@ -1,5 +1,6 @@
 import ConnectionKit
 import CommonCrypto
+import Compression
 import Foundation
 import Network
 
@@ -386,6 +387,10 @@ public actor RFBClient {
                 )
             case 2:
                 try await handleRRERectangle(x: x, y: y, width: width, height: height)
+            case 5:
+                try await handleHextileRectangle(x: x, y: y, width: width, height: height)
+            case 16:
+                try await handleZRLERectangle(x: x, y: y, width: width, height: height)
             case -223:
                 framebuffer.resize(width: width, height: height)
             case -224:
@@ -423,6 +428,88 @@ public actor RFBClient {
                 pixel: foregroundPixel
             )
         }
+    }
+
+    private func handleHextileRectangle(x: Int, y: Int, width: Int, height: Int) async throws {
+        var backgroundPixel: UInt32 = 0x181C24FF
+        var foregroundPixel: UInt32 = 0xFFFFFFFF
+
+        for tileY in stride(from: 0, to: height, by: 16) {
+            for tileX in stride(from: 0, to: width, by: 16) {
+                let tileWidth = min(16, width - tileX)
+                let tileHeight = min(16, height - tileY)
+                let subencoding = try await receiveUInt8()
+
+                if (subencoding & 0b0000_0001) != 0 {
+                    let rawBytes = try await receiveExact(count: tileWidth * tileHeight * activePixelFormat.bytesPerPixel)
+                    framebuffer.applyRawRectangle(
+                        x: x + tileX,
+                        y: y + tileY,
+                        width: tileWidth,
+                        height: tileHeight,
+                        pixelFormat: activePixelFormat,
+                        bytes: rawBytes
+                    )
+                    continue
+                }
+
+                if (subencoding & 0b0000_0010) != 0 {
+                    backgroundPixel = try await receivePixel()
+                }
+                framebuffer.fillRectangle(
+                    x: x + tileX,
+                    y: y + tileY,
+                    width: tileWidth,
+                    height: tileHeight,
+                    pixel: backgroundPixel
+                )
+
+                if (subencoding & 0b0000_0100) != 0 {
+                    foregroundPixel = try await receivePixel()
+                }
+
+                guard (subencoding & 0b0000_1000) != 0 else {
+                    continue
+                }
+
+                let subrectangleCount = Int(try await receiveUInt8())
+                let coloredSubrectangles = (subencoding & 0b0001_0000) != 0
+
+                for _ in 0..<subrectangleCount {
+                    let pixel = coloredSubrectangles ? (try await receivePixel()) : foregroundPixel
+                    let xy = try await receiveUInt8()
+                    let wh = try await receiveUInt8()
+                    let subX = Int(xy >> 4)
+                    let subY = Int(xy & 0x0F)
+                    let subWidth = Int((wh >> 4) & 0x0F) + 1
+                    let subHeight = Int(wh & 0x0F) + 1
+
+                    framebuffer.fillRectangle(
+                        x: x + tileX + subX,
+                        y: y + tileY + subY,
+                        width: subWidth,
+                        height: subHeight,
+                        pixel: pixel
+                    )
+                }
+            }
+        }
+    }
+
+    private func handleZRLERectangle(x: Int, y: Int, width: Int, height: Int) async throws {
+        let compressedLength = Int(try await receiveUInt32())
+        let compressedData = try await receiveExact(count: compressedLength)
+        let decoded = try RFBZRLEDecoder.decompress(compressedData)
+        var reader = RFBDataReader(data: decoded)
+        try RFBZRLEDecoder.decodeRectangle(
+            into: &framebuffer,
+            pixelFormat: activePixelFormat,
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            reader: &reader
+        )
     }
 
     private func makeSnapshot() -> RFBFramebufferSnapshot {
@@ -545,11 +632,11 @@ public actor RFBClient {
     private func preferredEncodings(for preset: VNCQualityPreset) -> [Int32] {
         switch preset {
         case .low:
-            return [2, 1, 0, -223, -224]
+            return [16, 5, 2, 1, 0, -223, -224]
         case .balanced:
-            return [1, 2, 0, -223, -224]
+            return [16, 5, 1, 2, 0, -223, -224]
         case .high:
-            return [0, 1, 2, -223, -224]
+            return [16, 5, 0, 1, 2, -223, -224]
         }
     }
 }
@@ -615,6 +702,14 @@ private struct RFBFramebuffer {
                 pixels[destinationY * self.width + destinationX] = pixel
             }
         }
+    }
+
+    mutating func setPixel(x: Int, y: Int, pixel: UInt32) {
+        guard x >= 0, x < width, y >= 0, y < height else {
+            return
+        }
+
+        pixels[y * width + x] = pixel
     }
 
     mutating func copyRectangle(fromX: Int, fromY: Int, toX: Int, toY: Int, width: Int, height: Int) {
@@ -866,6 +961,469 @@ enum VNCAuthentication {
             input >>= 1
         }
         return result
+    }
+}
+
+struct RFBDataReader {
+    let data: Data
+    private(set) var offset = 0
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    var isAtEnd: Bool {
+        offset >= data.count
+    }
+
+    mutating func readUInt8() throws -> UInt8 {
+        guard offset < data.count else {
+            throw RFBClientError.transportFailed("Unexpected end of ZRLE payload")
+        }
+
+        let value = data[offset]
+        offset += 1
+        return value
+    }
+
+    mutating func readBytes(count: Int) throws -> Data {
+        guard count >= 0, offset + count <= data.count else {
+            throw RFBClientError.transportFailed("Unexpected end of ZRLE payload")
+        }
+
+        let range = offset..<(offset + count)
+        offset += count
+        return data.subdata(in: range)
+    }
+
+    mutating func readPixel(format: RFBPixelFormat) throws -> UInt32 {
+        let bytes = try readBytes(count: format.bytesPerPixel)
+        return bytes.withUnsafeBytes { pointer in
+            guard let baseAddress = pointer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return UInt32(0)
+            }
+            return format.decodePixel(bytes: UnsafeBufferPointer(start: baseAddress, count: format.bytesPerPixel))
+        }
+    }
+}
+
+enum RFBZRLEDecoder {
+    static func decompress(_ compressedData: Data) throws -> Data {
+        if compressedData.isEmpty {
+            return Data()
+        }
+
+        let destinationBufferSize = max(64 * 1024, compressedData.count * 8)
+        let dummyDestination = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+        dummyDestination.initialize(to: 0)
+        let dummySource = UnsafePointer(dummyDestination)
+        var stream = compression_stream(
+            dst_ptr: dummyDestination,
+            dst_size: 0,
+            src_ptr: dummySource,
+            src_size: 0,
+            state: nil
+        )
+        var status = compression_stream_init(&stream, COMPRESSION_STREAM_DECODE, COMPRESSION_ZLIB)
+        guard status != COMPRESSION_STATUS_ERROR else {
+            throw RFBClientError.transportFailed("Failed to initialize ZRLE decompressor")
+        }
+        defer {
+            compression_stream_destroy(&stream)
+            dummyDestination.deinitialize(count: 1)
+            dummyDestination.deallocate()
+        }
+
+        return try compressedData.withUnsafeBytes { sourcePointer in
+            guard let sourceBase = sourcePointer.bindMemory(to: UInt8.self).baseAddress else {
+                return Data()
+            }
+
+            var output = Data()
+            var scratch = [UInt8](repeating: 0, count: destinationBufferSize)
+
+            stream.src_ptr = sourceBase
+            stream.src_size = compressedData.count
+
+            repeat {
+                let scratchCount = scratch.count
+                let decodedCount = try scratch.withUnsafeMutableBytes { scratchPointer -> Int in
+                    guard let destinationBase = scratchPointer.bindMemory(to: UInt8.self).baseAddress else {
+                        throw RFBClientError.transportFailed("Failed to allocate ZRLE buffer")
+                    }
+
+                    stream.dst_ptr = destinationBase
+                    stream.dst_size = scratchCount
+                    status = compression_stream_process(&stream, Int32(COMPRESSION_STREAM_FINALIZE.rawValue))
+                    guard status != COMPRESSION_STATUS_ERROR else {
+                        throw RFBClientError.transportFailed("Failed to decompress ZRLE payload")
+                    }
+                    return scratchCount - stream.dst_size
+                }
+
+                if decodedCount > 0 {
+                    output.append(scratch, count: decodedCount)
+                }
+            } while status == COMPRESSION_STATUS_OK
+
+            return output
+        }
+    }
+
+    fileprivate static func decodeRectangle(
+        into framebuffer: inout RFBFramebuffer,
+        pixelFormat: RFBPixelFormat,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        reader: inout RFBDataReader
+    ) throws {
+        for tileY in stride(from: 0, to: height, by: 64) {
+            for tileX in stride(from: 0, to: width, by: 64) {
+                let tileWidth = min(64, width - tileX)
+                let tileHeight = min(64, height - tileY)
+                try decodeTile(
+                    into: &framebuffer,
+                    pixelFormat: pixelFormat,
+                    x: x + tileX,
+                    y: y + tileY,
+                    width: tileWidth,
+                    height: tileHeight,
+                    reader: &reader
+                )
+            }
+        }
+    }
+
+    static func decodePixelsForTesting(
+        payload: Data,
+        pixelFormat: RFBPixelFormat,
+        width: Int,
+        height: Int
+    ) throws -> [UInt32] {
+        var framebuffer = RFBFramebuffer(width: width, height: height)
+        var reader = RFBDataReader(data: payload)
+        try decodeRectangle(
+            into: &framebuffer,
+            pixelFormat: pixelFormat,
+            x: 0,
+            y: 0,
+            width: width,
+            height: height,
+            reader: &reader
+        )
+        return framebuffer.pixels
+    }
+
+    fileprivate static func decodeTile(
+        into framebuffer: inout RFBFramebuffer,
+        pixelFormat: RFBPixelFormat,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        reader: inout RFBDataReader
+    ) throws {
+        let mode = Int(try reader.readUInt8())
+        let isRunLengthEncoded = (mode & 0x80) != 0
+        let paletteSize = mode & 0x7F
+
+        if !isRunLengthEncoded && paletteSize == 0 {
+            let rawBytes = try reader.readBytes(count: width * height * pixelFormat.bytesPerPixel)
+            framebuffer.applyRawRectangle(
+                x: x,
+                y: y,
+                width: width,
+                height: height,
+                pixelFormat: pixelFormat,
+                bytes: rawBytes
+            )
+            return
+        }
+
+        let palette = try readPalette(count: paletteSize, pixelFormat: pixelFormat, reader: &reader)
+
+        if !isRunLengthEncoded {
+            if paletteSize == 1, let color = palette.first {
+                framebuffer.fillRectangle(x: x, y: y, width: width, height: height, pixel: color)
+                return
+            }
+
+            try decodePackedPaletteTile(
+                into: &framebuffer,
+                palette: palette,
+                x: x,
+                y: y,
+                width: width,
+                height: height,
+                reader: &reader
+            )
+            return
+        }
+
+        if paletteSize == 0 {
+            try decodePlainRLETile(
+                into: &framebuffer,
+                pixelFormat: pixelFormat,
+                x: x,
+                y: y,
+                width: width,
+                height: height,
+                reader: &reader
+            )
+            return
+        }
+
+        try decodePaletteRLETile(
+            into: &framebuffer,
+            palette: palette,
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            reader: &reader
+        )
+    }
+
+    private static func readPalette(
+        count: Int,
+        pixelFormat: RFBPixelFormat,
+        reader: inout RFBDataReader
+    ) throws -> [UInt32] {
+        if count == 0 {
+            return []
+        }
+
+        var palette: [UInt32] = []
+        palette.reserveCapacity(count)
+        for _ in 0..<count {
+            palette.append(try reader.readPixel(format: pixelFormat))
+        }
+        return palette
+    }
+
+    fileprivate static func decodePackedPaletteTile(
+        into framebuffer: inout RFBFramebuffer,
+        palette: [UInt32],
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        reader: inout RFBDataReader
+    ) throws {
+        guard !palette.isEmpty else {
+            throw RFBClientError.transportFailed("ZRLE packed palette tile is missing palette colors")
+        }
+
+        let bitsPerIndex: Int
+        switch palette.count {
+        case 2:
+            bitsPerIndex = 1
+        case 3...4:
+            bitsPerIndex = 2
+        case 5...16:
+            bitsPerIndex = 4
+        default:
+            throw RFBClientError.transportFailed("Unsupported ZRLE packed palette size: \(palette.count)")
+        }
+
+        let mask = (1 << bitsPerIndex) - 1
+        let bytesPerRow = (width * bitsPerIndex + 7) / 8
+
+        for row in 0..<height {
+            let rowBytes = try reader.readBytes(count: bytesPerRow)
+            var bitOffset = 0
+
+            for column in 0..<width {
+                let byteIndex = bitOffset / 8
+                let intraByteOffset = bitOffset % 8
+                let byteValue = Int(rowBytes[rowBytes.startIndex + byteIndex])
+                let shift = 8 - bitsPerIndex - intraByteOffset
+                let paletteIndex = (byteValue >> shift) & mask
+                guard paletteIndex < palette.count else {
+                    throw RFBClientError.transportFailed("ZRLE palette index out of range")
+                }
+
+                framebuffer.setPixel(x: x + column, y: y + row, pixel: palette[paletteIndex])
+                bitOffset += bitsPerIndex
+            }
+        }
+    }
+
+    fileprivate static func decodePlainRLETile(
+        into framebuffer: inout RFBFramebuffer,
+        pixelFormat: RFBPixelFormat,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        reader: inout RFBDataReader
+    ) throws {
+        let totalPixels = width * height
+        var writtenPixels = 0
+
+        while writtenPixels < totalPixels {
+            let pixel = try reader.readPixel(format: pixelFormat)
+            let runLength = try readRunLength(reader: &reader)
+            try writeRun(
+                into: &framebuffer,
+                x: x,
+                y: y,
+                width: width,
+                totalPixels: totalPixels,
+                writtenPixels: &writtenPixels,
+                runLength: runLength,
+                pixel: pixel
+            )
+        }
+    }
+
+    fileprivate static func decodePaletteRLETile(
+        into framebuffer: inout RFBFramebuffer,
+        palette: [UInt32],
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        reader: inout RFBDataReader
+    ) throws {
+        guard !palette.isEmpty else {
+            throw RFBClientError.transportFailed("ZRLE palette RLE tile is missing palette colors")
+        }
+
+        let totalPixels = width * height
+        var writtenPixels = 0
+
+        while writtenPixels < totalPixels {
+            let encodedIndex = Int(try reader.readUInt8())
+            let paletteIndex = encodedIndex & 0x7F
+            guard paletteIndex < palette.count else {
+                throw RFBClientError.transportFailed("ZRLE palette RLE index out of range")
+            }
+
+            let runLength = (encodedIndex & 0x80) != 0 ? (try readRunLength(reader: &reader)) : 1
+            try writeRun(
+                into: &framebuffer,
+                x: x,
+                y: y,
+                width: width,
+                totalPixels: totalPixels,
+                writtenPixels: &writtenPixels,
+                runLength: runLength,
+                pixel: palette[paletteIndex]
+            )
+        }
+    }
+
+    private static func readRunLength(reader: inout RFBDataReader) throws -> Int {
+        var runLength = 1
+        while true {
+            let extensionByte = Int(try reader.readUInt8())
+            runLength += extensionByte
+            if extensionByte < 255 {
+                return runLength
+            }
+        }
+    }
+
+    fileprivate static func writeRun(
+        into framebuffer: inout RFBFramebuffer,
+        x: Int,
+        y: Int,
+        width: Int,
+        totalPixels: Int,
+        writtenPixels: inout Int,
+        runLength: Int,
+        pixel: UInt32
+    ) throws {
+        guard runLength > 0, writtenPixels + runLength <= totalPixels else {
+            throw RFBClientError.transportFailed("Invalid ZRLE run length")
+        }
+
+        for _ in 0..<runLength {
+            let localY = writtenPixels / width
+            let localX = writtenPixels % width
+            framebuffer.setPixel(x: x + localX, y: y + localY, pixel: pixel)
+            writtenPixels += 1
+        }
+    }
+}
+
+enum RFBHextileDecoder {
+    static func decodePixelsForTesting(
+        payload: Data,
+        pixelFormat: RFBPixelFormat,
+        width: Int,
+        height: Int
+    ) throws -> [UInt32] {
+        var framebuffer = RFBFramebuffer(width: width, height: height)
+        var reader = RFBDataReader(data: payload)
+        var backgroundPixel: UInt32 = 0x181C24FF
+        var foregroundPixel: UInt32 = 0xFFFFFFFF
+
+        for tileY in stride(from: 0, to: height, by: 16) {
+            for tileX in stride(from: 0, to: width, by: 16) {
+                let tileWidth = min(16, width - tileX)
+                let tileHeight = min(16, height - tileY)
+                let subencoding = try reader.readUInt8()
+
+                if (subencoding & 0b0000_0001) != 0 {
+                    let rawBytes = try reader.readBytes(count: tileWidth * tileHeight * pixelFormat.bytesPerPixel)
+                    framebuffer.applyRawRectangle(
+                        x: tileX,
+                        y: tileY,
+                        width: tileWidth,
+                        height: tileHeight,
+                        pixelFormat: pixelFormat,
+                        bytes: rawBytes
+                    )
+                    continue
+                }
+
+                if (subencoding & 0b0000_0010) != 0 {
+                    backgroundPixel = try reader.readPixel(format: pixelFormat)
+                }
+
+                framebuffer.fillRectangle(
+                    x: tileX,
+                    y: tileY,
+                    width: tileWidth,
+                    height: tileHeight,
+                    pixel: backgroundPixel
+                )
+
+                if (subencoding & 0b0000_0100) != 0 {
+                    foregroundPixel = try reader.readPixel(format: pixelFormat)
+                }
+
+                guard (subencoding & 0b0000_1000) != 0 else {
+                    continue
+                }
+
+                let subrectangleCount = Int(try reader.readUInt8())
+                let coloredSubrectangles = (subencoding & 0b0001_0000) != 0
+                for _ in 0..<subrectangleCount {
+                    let pixel = coloredSubrectangles ? (try reader.readPixel(format: pixelFormat)) : foregroundPixel
+                    let xy = try reader.readUInt8()
+                    let wh = try reader.readUInt8()
+                    let subX = Int(xy >> 4)
+                    let subY = Int(xy & 0x0F)
+                    let subWidth = Int((wh >> 4) & 0x0F) + 1
+                    let subHeight = Int(wh & 0x0F) + 1
+
+                    framebuffer.fillRectangle(
+                        x: tileX + subX,
+                        y: tileY + subY,
+                        width: subWidth,
+                        height: subHeight,
+                        pixel: pixel
+                    )
+                }
+            }
+        }
+
+        return framebuffer.pixels
     }
 }
 
