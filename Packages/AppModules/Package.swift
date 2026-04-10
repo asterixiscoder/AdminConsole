@@ -149,6 +149,13 @@ let package = Package(
         .target(name: "SecurityKit"),
         .target(name: "TelemetryKit"),
         .testTarget(
+            name: "SSHKitTests",
+            dependencies: [
+                "DesktopDomain",
+                "SSHKit"
+            ]
+        ),
+        .testTarget(
             name: "SecurityKitTests",
             dependencies: ["SecurityKit"]
         ),

@@ -38,6 +38,80 @@ public enum TerminalConnectionState: String, Codable, CaseIterable, Sendable {
     case failed
 }
 
+public struct TerminalCursorState: Codable, Equatable, Sendable {
+    public var row: Int
+    public var column: Int
+    public var isVisible: Bool
+
+    public init(row: Int = 0, column: Int = 0, isVisible: Bool = true) {
+        self.row = row
+        self.column = column
+        self.isVisible = isVisible
+    }
+}
+
+public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
+    public var columns: Int
+    public var rows: Int
+    public var viewportLines: [String]
+    public var cursor: TerminalCursorState
+    public var scrollbackLineCount: Int
+
+    public init(
+        columns: Int,
+        rows: Int,
+        viewportLines: [String],
+        cursor: TerminalCursorState = TerminalCursorState(),
+        scrollbackLineCount: Int = 0
+    ) {
+        self.columns = max(1, columns)
+        self.rows = max(1, rows)
+        let normalizedRows = max(1, rows)
+        let normalizedLines = Array(viewportLines.prefix(normalizedRows))
+        self.viewportLines = normalizedLines + Array(repeating: "", count: max(0, normalizedRows - normalizedLines.count))
+        self.cursor = cursor
+        self.scrollbackLineCount = max(0, scrollbackLineCount)
+    }
+
+    public static func placeholder(
+        columns: Int,
+        rows: Int,
+        message: [String] = []
+    ) -> TerminalBufferSnapshot {
+        TerminalBufferSnapshot(
+            columns: columns,
+            rows: rows,
+            viewportLines: Array(message.prefix(max(1, rows))),
+            cursor: TerminalCursorState(row: max(0, min(rows - 1, message.count)), column: 0, isVisible: false)
+        )
+    }
+
+    public func renderedViewportLines(insertingCursor: Bool = false) -> [String] {
+        guard insertingCursor, cursor.isVisible else {
+            return viewportLines
+        }
+
+        var lines = viewportLines
+        guard cursor.row >= 0, cursor.row < lines.count else {
+            return lines
+        }
+
+        var characters = Array(lines[cursor.row])
+        if cursor.column >= characters.count {
+            characters += Array(repeating: " ", count: cursor.column - characters.count)
+            characters.append("█")
+        } else {
+            characters[cursor.column] = "█"
+        }
+        lines[cursor.row] = String(characters)
+        return lines
+    }
+
+    public func viewportText(insertingCursor: Bool = false) -> String {
+        renderedViewportLines(insertingCursor: insertingCursor).joined(separator: "\n")
+    }
+}
+
 public struct TerminalSurfaceState: Codable, Equatable, Sendable {
     public static let maximumTranscriptLength = 12_000
 
@@ -47,6 +121,7 @@ public struct TerminalSurfaceState: Codable, Equatable, Sendable {
     public var transcript: String
     public var columns: Int
     public var rows: Int
+    public var buffer: TerminalBufferSnapshot
 
     public init(
         connectionTitle: String = "Terminal",
@@ -54,7 +129,8 @@ public struct TerminalSurfaceState: Codable, Equatable, Sendable {
         statusMessage: String = "Ready for SSH session",
         transcript: String = "No SSH session yet.\nUse the iPhone control scene to connect.\n",
         columns: Int = 120,
-        rows: Int = 32
+        rows: Int = 32,
+        buffer: TerminalBufferSnapshot? = nil
     ) {
         self.connectionTitle = connectionTitle
         self.sessionState = sessionState
@@ -62,6 +138,7 @@ public struct TerminalSurfaceState: Codable, Equatable, Sendable {
         self.transcript = Self.trimmedTranscript(transcript)
         self.columns = columns
         self.rows = rows
+        self.buffer = buffer ?? Self.defaultBuffer(columns: columns, rows: rows, transcript: transcript)
     }
 
     public static func idle(
@@ -75,12 +152,23 @@ public struct TerminalSurfaceState: Codable, Equatable, Sendable {
             statusMessage: "Ready for SSH session",
             transcript: "No SSH session yet.\nUse the iPhone control scene to connect.\n",
             columns: columns,
-            rows: rows
+            rows: rows,
+            buffer: defaultBuffer(
+                columns: columns,
+                rows: rows,
+                transcript: "No SSH session yet.\nUse the iPhone control scene to connect.\n"
+            )
         )
     }
 
     public mutating func appendOutput(_ text: String) {
         transcript = Self.trimmedTranscript(transcript + text)
+    }
+
+    public mutating func replaceBuffer(_ snapshot: TerminalBufferSnapshot) {
+        buffer = snapshot
+        columns = snapshot.columns
+        rows = snapshot.rows
     }
 
     public static func trimmedTranscript(_ text: String) -> String {
@@ -89,6 +177,13 @@ public struct TerminalSurfaceState: Codable, Equatable, Sendable {
         }
 
         return String(text.suffix(maximumTranscriptLength))
+    }
+
+    private static func defaultBuffer(columns: Int, rows: Int, transcript: String) -> TerminalBufferSnapshot {
+        let message = transcript
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        return TerminalBufferSnapshot.placeholder(columns: columns, rows: rows, message: message)
     }
 }
 

@@ -44,6 +44,7 @@ public actor SSHTerminalRuntime {
     private let stateSink: StateSink
     private let hostKeyTrustStore: SSHHostKeyTrustStore
     private var state: TerminalSurfaceState
+    private var emulator: TerminalEmulator
     private var transport: Transport?
 
     public init(
@@ -52,8 +53,17 @@ public actor SSHTerminalRuntime {
         hostKeyTrustStore: SSHHostKeyTrustStore = SSHHostKeyTrustStore(),
         stateSink: @escaping StateSink
     ) {
+        let emulator = TerminalEmulator(
+            columns: initialState.columns,
+            rows: initialState.rows,
+            initialTranscript: initialState.transcript
+        )
+        var seededState = initialState
+        seededState.replaceBuffer(emulator.makeBufferSnapshot())
+
         self.windowID = windowID
-        self.state = initialState
+        self.state = seededState
+        self.emulator = emulator
         self.hostKeyTrustStore = hostKeyTrustStore
         self.stateSink = stateSink
     }
@@ -74,6 +84,12 @@ public actor SSHTerminalRuntime {
             columns: configuration.terminalSize.columns,
             rows: configuration.terminalSize.rows
         )
+        emulator.reset(
+            columns: configuration.terminalSize.columns,
+            rows: configuration.terminalSize.rows,
+            initialTranscript: state.transcript
+        )
+        state.replaceBuffer(emulator.makeBufferSnapshot())
         await publishState()
 
         do {
@@ -84,7 +100,7 @@ public actor SSHTerminalRuntime {
             state.statusMessage = "Connected"
             state.columns = configuration.terminalSize.columns
             state.rows = configuration.terminalSize.rows
-            state.appendOutput("SSH session established.\n")
+            appendTerminalOutput("SSH session established.\n")
             await publishState()
             return true
         } catch {
@@ -92,7 +108,7 @@ public actor SSHTerminalRuntime {
             state.connectionTitle = configuration.connectionSummary
             state.sessionState = .failed
             state.statusMessage = error.localizedDescription
-            state.appendOutput("Connection failed: \(error.localizedDescription)\n")
+            appendTerminalOutput("Connection failed: \(error.localizedDescription)\n")
             await publishState()
             return false
         }
@@ -102,7 +118,7 @@ public actor SSHTerminalRuntime {
         state.connectionTitle = connectionTitle
         state.sessionState = .failed
         state.statusMessage = message
-        state.appendOutput("Connection failed: \(message)\n")
+        appendTerminalOutput("Connection failed: \(message)\n")
         await publishState()
     }
 
@@ -112,7 +128,7 @@ public actor SSHTerminalRuntime {
         if state.sessionState != .idle {
             state.sessionState = .idle
             state.statusMessage = "Disconnected"
-            state.appendOutput("SSH session disconnected.\n")
+            appendTerminalOutput("SSH session disconnected.\n")
             await publishState()
         }
     }
@@ -132,8 +148,8 @@ public actor SSHTerminalRuntime {
     }
 
     public func resize(to terminalSize: TerminalSize) async {
-        state.columns = terminalSize.columns
-        state.rows = terminalSize.rows
+        emulator.resize(columns: terminalSize.columns, rows: terminalSize.rows)
+        synchronizeStateFromEmulator(columns: terminalSize.columns, rows: terminalSize.rows)
         await publishState()
 
         guard let shellChannel = transport?.shellChannel else {
@@ -268,7 +284,7 @@ public actor SSHTerminalRuntime {
             return
         }
 
-        state.appendOutput(output)
+        appendTerminalOutput(output)
         await publishState()
     }
 
@@ -279,9 +295,22 @@ public actor SSHTerminalRuntime {
 
         state.sessionState = .failed
         state.statusMessage = reason
-        state.appendOutput("\nSession ended: \(reason)\n")
+        appendTerminalOutput("\nSession ended: \(reason)\n")
         await publishState()
         await tearDownTransport()
+    }
+
+    private func appendTerminalOutput(_ text: String) {
+        emulator.consume(text)
+        state.transcript = emulator.makeTranscript()
+        state.replaceBuffer(emulator.makeBufferSnapshot())
+    }
+
+    private func synchronizeStateFromEmulator(columns: Int, rows: Int) {
+        state.columns = columns
+        state.rows = rows
+        state.transcript = emulator.makeTranscript()
+        state.replaceBuffer(emulator.makeBufferSnapshot())
     }
 
     private func publishState() async {
@@ -423,9 +452,9 @@ private final class SSHInteractiveShellHandler: ChannelInboundHandler, @unchecke
         switch payload.data {
         case .byteBuffer(var buffer):
             if let text = buffer.readString(length: buffer.readableBytes) {
-                onOutput(Self.sanitizedTranscript(text))
+                onOutput(text)
             } else if let bytes = buffer.readBytes(length: buffer.readableBytes) {
-                onOutput(Self.sanitizedTranscript(String(decoding: bytes, as: UTF8.self)))
+                onOutput(String(decoding: bytes, as: UTF8.self))
             }
         case .fileRegion:
             break
@@ -462,44 +491,5 @@ private final class SSHInteractiveShellHandler: ChannelInboundHandler, @unchecke
 
         didTerminate = true
         onTermination(reason)
-    }
-
-    private static func sanitizedTranscript(_ text: String) -> String {
-        var scalars = String.UnicodeScalarView()
-        var iterator = text.unicodeScalars.makeIterator()
-        var isEscaping = false
-        var isCSI = false
-
-        while let scalar = iterator.next() {
-            if isEscaping {
-                if !isCSI && scalar == "[" {
-                    isCSI = true
-                    continue
-                }
-
-                if isCSI {
-                    if scalar.value >= 0x40 && scalar.value <= 0x7E {
-                        isEscaping = false
-                        isCSI = false
-                    }
-                    continue
-                }
-
-                isEscaping = false
-                continue
-            }
-
-            if scalar == "\u{001B}" {
-                isEscaping = true
-                isCSI = false
-                continue
-            }
-
-            scalars.append(scalar)
-        }
-
-        return String(scalars)
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "")
     }
 }

@@ -347,12 +347,11 @@ final class DesktopRootViewController: UIViewController {
     }
 
     private func terminalTranscriptPreview(_ state: PhaseZeroTerminalState?) -> String {
-        guard let transcript = state?.transcript else {
-            return "No transcript yet."
+        guard let buffer = state?.buffer else {
+            return "No terminal screen yet."
         }
 
-        let lines = transcript.split(separator: "\n", omittingEmptySubsequences: false)
-        return lines.suffix(14).joined(separator: "\n")
+        return buffer.viewportText(insertingCursor: state?.sessionState == .connected)
     }
 
     @objc

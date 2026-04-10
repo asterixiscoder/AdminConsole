@@ -542,7 +542,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
             return "No terminal output yet."
         }
 
-        let lines = terminalState.transcript.split(separator: "\n", omittingEmptySubsequences: false)
+        let lines = terminalState.buffer.renderedViewportLines(insertingCursor: terminalState.sessionState == .connected)
         return lines.suffix(10).joined(separator: "\n")
     }
 
