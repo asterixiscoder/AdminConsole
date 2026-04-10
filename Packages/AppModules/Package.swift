@@ -88,6 +88,7 @@ let package = Package(
             dependencies: [
                 "DesktopDomain",
                 "ConnectionKit",
+                "SecurityKit",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOFoundationCompat", package: "swift-nio"),
                 .product(name: "NIOSSH", package: "swift-nio-ssh"),
@@ -147,6 +148,10 @@ let package = Package(
         ),
         .target(name: "SecurityKit"),
         .target(name: "TelemetryKit"),
+        .testTarget(
+            name: "SecurityKitTests",
+            dependencies: ["SecurityKit"]
+        ),
         .testTarget(
             name: "DesktopStoreTests",
             dependencies: [

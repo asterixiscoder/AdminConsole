@@ -18,6 +18,8 @@ public struct AdminConsoleBootstrap: Sendable {
     public let persistence: WorkspacePersistence
     public let inputRouter: InputRouter
     public let compositor: DesktopSurfaceModel
+    public let sshCredentialStore: SSHCredentialStore
+    public let sshHostKeyTrustStore: SSHHostKeyTrustStore
     public let logger: Logger
 
     public init(
@@ -26,6 +28,8 @@ public struct AdminConsoleBootstrap: Sendable {
         persistence: WorkspacePersistence = InMemoryWorkspacePersistence(),
         inputRouter: InputRouter = InputRouter(),
         compositor: DesktopSurfaceModel = .init(scale: 1.0),
+        sshCredentialStore: SSHCredentialStore = SSHCredentialStore(),
+        sshHostKeyTrustStore: SSHHostKeyTrustStore = SSHHostKeyTrustStore(),
         logger: Logger = Logger(subsystem: "AppPlatform")
     ) {
         self.store = store
@@ -33,6 +37,8 @@ public struct AdminConsoleBootstrap: Sendable {
         self.persistence = persistence
         self.inputRouter = inputRouter
         self.compositor = compositor
+        self.sshCredentialStore = sshCredentialStore
+        self.sshHostKeyTrustStore = sshHostKeyTrustStore
         self.logger = logger
     }
 }
@@ -77,7 +83,15 @@ public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
         self.pixelHeight = pixelHeight
     }
 
-    public var runtimeConfiguration: SSHConnectionConfiguration {
+    public var connectionSummary: String {
+        "\(username)@\(host):\(port)"
+    }
+
+    public var credentialIdentity: SSHCredentialIdentity {
+        SSHCredentialIdentity(host: host, port: port, username: username)
+    }
+
+    public func runtimeConfiguration(password: String) -> SSHConnectionConfiguration {
         SSHConnectionConfiguration(
             connection: ConnectionDescriptor(
                 kind: .ssh,
@@ -188,9 +202,25 @@ public actor PhaseZeroCoordinator {
             return
         }
 
-        await focusWindow(windowID)
-        await registerControlInput("SSH connect: \(request.username)@\(request.host):\(request.port)")
-        await runtime.connect(using: request.runtimeConfiguration)
+        do {
+            let password = try await resolvePassword(for: request)
+            await focusWindow(windowID)
+            await registerControlInput("SSH connect: \(request.connectionSummary)")
+            let didConnect = await runtime.connect(using: request.runtimeConfiguration(password: password))
+
+            if didConnect, !request.password.isEmpty {
+                _ = try await bootstrap.sshCredentialStore.savePassword(
+                    request.password,
+                    for: request.credentialIdentity
+                )
+            }
+        } catch {
+            await runtime.presentLocalFailure(
+                connectionTitle: request.connectionSummary,
+                message: error.localizedDescription
+            )
+            await registerControlInput("SSH connect failed: \(error.localizedDescription)")
+        }
     }
 
     public func sendInputToFocusedTerminal(_ text: String) async {
@@ -282,8 +312,31 @@ public actor PhaseZeroCoordinator {
     }
 
     private func makeTerminalRuntime(windowID: WindowID) -> SSHTerminalRuntime {
-        SSHTerminalRuntime(windowID: windowID) { [store = bootstrap.store] surface in
+        SSHTerminalRuntime(windowID: windowID, hostKeyTrustStore: bootstrap.sshHostKeyTrustStore) { [store = bootstrap.store] surface in
             _ = await store.dispatch(.updateTerminalSurface(windowID: windowID, surface: surface))
+        }
+    }
+
+    private func resolvePassword(for request: PhaseZeroSSHConnectionRequest) async throws -> String {
+        if !request.password.isEmpty {
+            return request.password
+        }
+
+        if let storedPassword = try await bootstrap.sshCredentialStore.password(for: request.credentialIdentity) {
+            return storedPassword
+        }
+
+        throw PhaseZeroCoordinatorError.missingSavedCredential(connectionSummary: request.connectionSummary)
+    }
+}
+
+enum PhaseZeroCoordinatorError: LocalizedError {
+    case missingSavedCredential(connectionSummary: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingSavedCredential(let connectionSummary):
+            return "No saved SSH password found for \(connectionSummary)."
         }
     }
 }

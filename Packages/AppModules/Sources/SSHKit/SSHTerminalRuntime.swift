@@ -3,6 +3,7 @@ import Foundation
 import NIOCore
 import NIOSSH
 import NIOTransportServices
+import SecurityKit
 
 public enum SSHRuntimeError: LocalizedError, Sendable {
     case shellChannelUnavailable
@@ -41,16 +42,19 @@ public actor SSHTerminalRuntime {
 
     private let windowID: WindowID
     private let stateSink: StateSink
+    private let hostKeyTrustStore: SSHHostKeyTrustStore
     private var state: TerminalSurfaceState
     private var transport: Transport?
 
     public init(
         windowID: WindowID,
         initialState: TerminalSurfaceState = .idle(),
+        hostKeyTrustStore: SSHHostKeyTrustStore = SSHHostKeyTrustStore(),
         stateSink: @escaping StateSink
     ) {
         self.windowID = windowID
         self.state = initialState
+        self.hostKeyTrustStore = hostKeyTrustStore
         self.stateSink = stateSink
     }
 
@@ -58,7 +62,8 @@ public actor SSHTerminalRuntime {
         state
     }
 
-    public func connect(using configuration: SSHConnectionConfiguration) async {
+    @discardableResult
+    public func connect(using configuration: SSHConnectionConfiguration) async -> Bool {
         await tearDownTransport()
 
         state = TerminalSurfaceState(
@@ -81,6 +86,7 @@ public actor SSHTerminalRuntime {
             state.rows = configuration.terminalSize.rows
             state.appendOutput("SSH session established.\n")
             await publishState()
+            return true
         } catch {
             await tearDownTransport()
             state.connectionTitle = configuration.connectionSummary
@@ -88,7 +94,16 @@ public actor SSHTerminalRuntime {
             state.statusMessage = error.localizedDescription
             state.appendOutput("Connection failed: \(error.localizedDescription)\n")
             await publishState()
+            return false
         }
+    }
+
+    public func presentLocalFailure(connectionTitle: String, message: String) async {
+        state.connectionTitle = connectionTitle
+        state.sessionState = .failed
+        state.statusMessage = message
+        state.appendOutput("Connection failed: \(message)\n")
+        await publishState()
     }
 
     public func disconnect() async {
@@ -150,7 +165,7 @@ public actor SSHTerminalRuntime {
 
         let bootstrap = NIOTSConnectionBootstrap(group: group)
             .connectTimeout(.seconds(15))
-            .channelInitializer { [windowID] channel in
+            .channelInitializer { [self, windowID] channel in
                 let shellPromise = channel.eventLoop.makePromise(of: Channel.self)
                 shellFutureBox.future = shellPromise.futureResult
 
@@ -161,7 +176,11 @@ public actor SSHTerminalRuntime {
                                 username: configuration.username,
                                 password: configuration.password
                             ),
-                            serverAuthDelegate: SSHAcceptAllHostKeyDelegate()
+                            serverAuthDelegate: SSHKnownHostKeyDelegate(
+                                host: configuration.connection.host,
+                                port: configuration.connection.port,
+                                trustStore: hostKeyTrustStore
+                            )
                         )
                     ),
                     allocator: channel.allocator,
@@ -349,9 +368,37 @@ private final class SSHPasswordAuthenticationDelegate: NIOSSHClientUserAuthentic
     }
 }
 
-private final class SSHAcceptAllHostKeyDelegate: NIOSSHClientServerAuthenticationDelegate, @unchecked Sendable {
+private final class SSHKnownHostKeyDelegate: NIOSSHClientServerAuthenticationDelegate, @unchecked Sendable {
+    private let host: String
+    private let port: Int
+    private let trustStore: SSHHostKeyTrustStore
+
+    init(host: String, port: Int, trustStore: SSHHostKeyTrustStore) {
+        self.host = host
+        self.port = port
+        self.trustStore = trustStore
+    }
+
     func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
-        validationCompletePromise.succeed(())
+        let openSSHPublicKey = String(openSSHPublicKey: hostKey)
+        let eventLoop = validationCompletePromise.futureResult.eventLoop
+
+        Task {
+            do {
+                _ = try await trustStore.validateOrTrustOnFirstUse(
+                    host: host,
+                    port: port,
+                    openSSHPublicKey: openSSHPublicKey
+                )
+                eventLoop.execute {
+                    validationCompletePromise.succeed(())
+                }
+            } catch {
+                eventLoop.execute {
+                    validationCompletePromise.fail(error)
+                }
+            }
+        }
     }
 }
 

@@ -294,7 +294,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         configureField(portField, placeholder: "Port", keyboardType: .numberPad)
         portField.text = "22"
         configureField(usernameField, placeholder: "Username", textContentType: .username)
-        configureField(passwordField, placeholder: "Password", textContentType: .password)
+        configureField(passwordField, placeholder: "Password (optional if saved)", textContentType: .password)
         passwordField.isSecureTextEntry = true
         configureField(commandField, placeholder: "Command to send to focused terminal")
         commandField.returnKeyType = .send
@@ -488,7 +488,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         let password = passwordField.text ?? ""
         let port = Int(portField.text ?? "") ?? 22
 
-        guard !host.isEmpty, !username.isEmpty, !password.isEmpty else {
+        guard !host.isEmpty, !username.isEmpty else {
             return nil
         }
 
