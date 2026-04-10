@@ -98,6 +98,7 @@ struct VT100Parser {
             screen.moveCursor(rowDelta: -1, columnDelta: 0)
             state = .ground
         case "c":
+            screen.resetStyle()
             screen.eraseInDisplay(mode: 2)
             state = .ground
         default:
@@ -164,7 +165,7 @@ struct VT100Parser {
         case "@":
             screen.insertBlankCharacters(params.first ?? 1)
         case "m":
-            break
+            screen.applySGR(params)
         case "s":
             screen.saveCursor()
         case "u":

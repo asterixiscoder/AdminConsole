@@ -49,6 +49,8 @@ public typealias PhaseZeroWindowID = WindowID
 public typealias PhaseZeroWindowKind = DesktopWindowKind
 public typealias PhaseZeroRect = NormalizedRect
 public typealias PhaseZeroTerminalState = TerminalSurfaceState
+public typealias PhaseZeroTerminalColor = TerminalColor
+public typealias PhaseZeroTerminalTextStyle = TerminalTextStyle
 
 public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
     public var host: String

@@ -50,27 +50,121 @@ public struct TerminalCursorState: Codable, Equatable, Sendable {
     }
 }
 
+public enum TerminalColor: Codable, Equatable, Sendable {
+    case `default`
+    case ansi256(Int)
+    case rgb(red: Int, green: Int, blue: Int)
+}
+
+public struct TerminalTextStyle: Codable, Equatable, Sendable {
+    public var foreground: TerminalColor
+    public var background: TerminalColor
+    public var isBold: Bool
+    public var isItalic: Bool
+    public var isUnderlined: Bool
+    public var isInverse: Bool
+
+    public init(
+        foreground: TerminalColor = .default,
+        background: TerminalColor = .default,
+        isBold: Bool = false,
+        isItalic: Bool = false,
+        isUnderlined: Bool = false,
+        isInverse: Bool = false
+    ) {
+        self.foreground = foreground
+        self.background = background
+        self.isBold = isBold
+        self.isItalic = isItalic
+        self.isUnderlined = isUnderlined
+        self.isInverse = isInverse
+    }
+
+    public static let `default` = TerminalTextStyle()
+}
+
+public struct TerminalCell: Codable, Equatable, Sendable {
+    public var character: String
+    public var style: TerminalTextStyle
+
+    public init(character: String = " ", style: TerminalTextStyle = .default) {
+        let normalizedCharacter = character.isEmpty ? " " : String(character.prefix(1))
+        self.character = normalizedCharacter
+        self.style = style
+    }
+}
+
+public struct TerminalStyledLine: Codable, Equatable, Sendable {
+    public var cells: [TerminalCell]
+
+    public init(cells: [TerminalCell] = []) {
+        self.cells = cells
+    }
+
+    public var plainText: String {
+        cells.map(\.character).joined()
+    }
+
+    public var plainTextTrimmed: String {
+        var output = plainText
+        while output.last == " " {
+            output.removeLast()
+        }
+        return output
+    }
+}
+
 public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
     public var columns: Int
     public var rows: Int
-    public var viewportLines: [String]
+    public var styledLines: [TerminalStyledLine]
     public var cursor: TerminalCursorState
     public var scrollbackLineCount: Int
 
     public init(
         columns: Int,
         rows: Int,
-        viewportLines: [String],
+        styledLines: [TerminalStyledLine],
         cursor: TerminalCursorState = TerminalCursorState(),
         scrollbackLineCount: Int = 0
     ) {
         self.columns = max(1, columns)
         self.rows = max(1, rows)
         let normalizedRows = max(1, rows)
-        let normalizedLines = Array(viewportLines.prefix(normalizedRows))
-        self.viewportLines = normalizedLines + Array(repeating: "", count: max(0, normalizedRows - normalizedLines.count))
+        let normalizedLines = Array(styledLines.prefix(normalizedRows))
+        self.styledLines = normalizedLines + Array(
+            repeating: TerminalStyledLine(
+                cells: Array(repeating: TerminalCell(), count: max(1, columns))
+            ),
+            count: max(0, normalizedRows - normalizedLines.count)
+        )
         self.cursor = cursor
         self.scrollbackLineCount = max(0, scrollbackLineCount)
+    }
+
+    public init(
+        columns: Int,
+        rows: Int,
+        viewportLines: [String],
+        cursor: TerminalCursorState = TerminalCursorState(),
+        scrollbackLineCount: Int = 0,
+        style: TerminalTextStyle = .default
+    ) {
+        self.init(
+            columns: columns,
+            rows: rows,
+            styledLines: viewportLines.map { line in
+                TerminalStyledLine(
+                    cells: Array(line.prefix(max(1, columns))).map { TerminalCell(character: String($0), style: style) }
+                )
+            },
+            cursor: cursor,
+            scrollbackLineCount: scrollbackLineCount
+        )
+    }
+
+    public var viewportLines: [String] {
+        styledLines.map(\.plainTextTrimmed)
     }
 
     public static func placeholder(
@@ -84,6 +178,31 @@ public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
             viewportLines: Array(message.prefix(max(1, rows))),
             cursor: TerminalCursorState(row: max(0, min(rows - 1, message.count)), column: 0, isVisible: false)
         )
+    }
+
+    public func renderedStyledLines(insertingCursor: Bool = false) -> [TerminalStyledLine] {
+        guard insertingCursor, cursor.isVisible else {
+            return styledLines
+        }
+
+        var lines = styledLines
+        guard cursor.row >= 0, cursor.row < lines.count else {
+            return lines
+        }
+
+        var cells = lines[cursor.row].cells
+        while cells.count <= cursor.column {
+            cells.append(TerminalCell())
+        }
+
+        var cursorCell = cells[cursor.column]
+        cursorCell.style.isInverse.toggle()
+        if cursorCell.character == " " {
+            cursorCell.character = " "
+        }
+        cells[cursor.column] = cursorCell
+        lines[cursor.row] = TerminalStyledLine(cells: cells)
+        return lines
     }
 
     public func renderedViewportLines(insertingCursor: Bool = false) -> [String] {

@@ -58,4 +58,37 @@ final class TerminalEmulatorTests: XCTestCase {
 
         XCTAssertEqual(snapshot.viewportText(insertingCursor: true), "a█c\n")
     }
+
+    func testParsesBasicSGRAttributesAndColors() {
+        var emulator = TerminalEmulator(columns: 12, rows: 2)
+
+        emulator.consume("\u{001B}[31;44;1mA")
+        emulator.consume("\u{001B}[4;7mB")
+        emulator.consume("\u{001B}[0mC")
+
+        let snapshot = emulator.makeBufferSnapshot()
+        let firstLine = snapshot.styledLines[0].cells
+
+        XCTAssertEqual(firstLine[0].character, "A")
+        XCTAssertEqual(firstLine[0].style.foreground, .ansi256(1))
+        XCTAssertEqual(firstLine[0].style.background, .ansi256(4))
+        XCTAssertTrue(firstLine[0].style.isBold)
+
+        XCTAssertEqual(firstLine[1].character, "B")
+        XCTAssertTrue(firstLine[1].style.isUnderlined)
+        XCTAssertTrue(firstLine[1].style.isInverse)
+
+        XCTAssertEqual(firstLine[2].character, "C")
+        XCTAssertEqual(firstLine[2].style, .default)
+    }
+
+    func testParsesExtendedAnsiAndTrueColorSequences() {
+        var emulator = TerminalEmulator(columns: 12, rows: 1)
+
+        emulator.consume("\u{001B}[38;5;202;48;2;10;20;30mZ")
+
+        let cell = emulator.makeBufferSnapshot().styledLines[0].cells[0]
+        XCTAssertEqual(cell.style.foreground, .ansi256(202))
+        XCTAssertEqual(cell.style.background, .rgb(red: 10, green: 20, blue: 30))
+    }
 }

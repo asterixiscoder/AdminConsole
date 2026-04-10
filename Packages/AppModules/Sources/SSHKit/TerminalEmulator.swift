@@ -52,18 +52,19 @@ struct TerminalEmulator {
 struct TerminalScreenBuffer {
     private(set) var columns: Int
     private(set) var rows: Int
-    private var lines: [[Character]]
+    private var lines: [[TerminalCell]]
     private(set) var cursorRow: Int
     private(set) var cursorColumn: Int
     private(set) var isCursorVisible = true
     private var savedCursor = TerminalCursorState()
     private(set) var scrollbackLineCount = 0
+    private var activeStyle = TerminalTextStyle.default
 
     init(columns: Int, rows: Int) {
         self.columns = max(1, columns)
         self.rows = max(1, rows)
         self.lines = Array(
-            repeating: Array(repeating: " ", count: max(1, columns)),
+            repeating: Array(repeating: TerminalCell(), count: max(1, columns)),
             count: max(1, rows)
         )
         self.cursorRow = 0
@@ -77,8 +78,8 @@ struct TerminalScreenBuffer {
             return
         }
 
-        var resized: [[Character]] = Array(
-            repeating: Array(repeating: Character(" "), count: nextColumns),
+        var resized: [[TerminalCell]] = Array(
+            repeating: Array(repeating: TerminalCell(), count: nextColumns),
             count: nextRows
         )
         let rowsToCopy = min(nextRows, lines.count)
@@ -112,7 +113,7 @@ struct TerminalScreenBuffer {
             return
         }
 
-        lines[cursorRow][cursorColumn] = character
+        lines[cursorRow][cursorColumn] = TerminalCell(character: String(character), style: activeStyle)
         cursorColumn += 1
         if cursorColumn > columns {
             cursorColumn = columns
@@ -164,6 +165,66 @@ struct TerminalScreenBuffer {
 
     mutating func setCursorVisibility(_ isVisible: Bool) {
         isCursorVisible = isVisible
+    }
+
+    mutating func resetStyle() {
+        activeStyle = .default
+    }
+
+    mutating func applySGR(_ params: [Int]) {
+        let effectiveParams = params.isEmpty ? [0] : params
+        var index = 0
+
+        while index < effectiveParams.count {
+            let code = effectiveParams[index]
+            switch code {
+            case 0:
+                activeStyle = .default
+            case 1:
+                activeStyle.isBold = true
+            case 3:
+                activeStyle.isItalic = true
+            case 4:
+                activeStyle.isUnderlined = true
+            case 7:
+                activeStyle.isInverse = true
+            case 22:
+                activeStyle.isBold = false
+            case 23:
+                activeStyle.isItalic = false
+            case 24:
+                activeStyle.isUnderlined = false
+            case 27:
+                activeStyle.isInverse = false
+            case 30...37:
+                activeStyle.foreground = .ansi256(code - 30)
+            case 39:
+                activeStyle.foreground = .default
+            case 40...47:
+                activeStyle.background = .ansi256(code - 40)
+            case 49:
+                activeStyle.background = .default
+            case 90...97:
+                activeStyle.foreground = .ansi256(code - 90 + 8)
+            case 100...107:
+                activeStyle.background = .ansi256(code - 100 + 8)
+            case 38, 48:
+                let isForeground = code == 38
+                let remaining = Array(effectiveParams.suffix(from: index + 1))
+                if let (color, consumedCount) = parseExtendedColor(from: remaining) {
+                    if isForeground {
+                        activeStyle.foreground = color
+                    } else {
+                        activeStyle.background = color
+                    }
+                    index += consumedCount
+                }
+            default:
+                break
+            }
+
+            index += 1
+        }
     }
 
     mutating func eraseInDisplay(mode: Int) {
@@ -246,7 +307,7 @@ struct TerminalScreenBuffer {
 
         let clampedCount = min(count, rows - cursorRow)
         for _ in 0..<clampedCount {
-            lines.insert(Array(repeating: " ", count: columns), at: cursorRow)
+            lines.insert(Array(repeating: TerminalCell(style: activeStyle), count: columns), at: cursorRow)
             lines.removeLast()
         }
     }
@@ -259,7 +320,7 @@ struct TerminalScreenBuffer {
         let clampedCount = min(count, rows - cursorRow)
         for _ in 0..<clampedCount {
             lines.remove(at: cursorRow)
-            lines.append(Array(repeating: " ", count: columns))
+            lines.append(Array(repeating: TerminalCell(style: activeStyle), count: columns))
         }
     }
 
@@ -267,7 +328,7 @@ struct TerminalScreenBuffer {
         TerminalBufferSnapshot(
             columns: columns,
             rows: rows,
-            viewportLines: lines.map(Self.trimmedLine),
+            styledLines: lines.map { TerminalStyledLine(cells: $0) },
             cursor: TerminalCursorState(row: cursorRow, column: cursorColumn, isVisible: isCursorVisible),
             scrollbackLineCount: scrollbackLineCount
         )
@@ -289,23 +350,43 @@ struct TerminalScreenBuffer {
         }
 
         for index in start...end {
-            lines[row][index] = " "
+            lines[row][index] = TerminalCell(style: activeStyle)
         }
     }
 
     private mutating func scrollUp(by count: Int) {
         for _ in 0..<count {
             lines.removeFirst()
-            lines.append(Array(repeating: " ", count: columns))
+            lines.append(Array(repeating: TerminalCell(style: activeStyle), count: columns))
             scrollbackLineCount += 1
         }
     }
 
-    private static func trimmedLine(_ characters: [Character]) -> String {
-        var buffer = characters
-        while let last = buffer.last, last == " " {
-            buffer.removeLast()
+    private func parseExtendedColor(from params: [Int]) -> (TerminalColor, Int)? {
+        guard let mode = params.first else {
+            return nil
         }
-        return String(buffer)
+
+        switch mode {
+        case 5:
+            guard params.count >= 2 else {
+                return nil
+            }
+            return (.ansi256(max(0, min(255, params[1]))), 2)
+        case 2:
+            guard params.count >= 4 else {
+                return nil
+            }
+            return (
+                .rgb(
+                    red: max(0, min(255, params[1])),
+                    green: max(0, min(255, params[2])),
+                    blue: max(0, min(255, params[3]))
+                ),
+                4
+            )
+        default:
+            return nil
+        }
     }
 }

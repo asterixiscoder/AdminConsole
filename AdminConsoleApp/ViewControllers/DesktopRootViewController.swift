@@ -279,9 +279,8 @@ final class DesktopRootViewController: UIViewController {
 
         let transcriptLabel = UILabel()
         transcriptLabel.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        transcriptLabel.textColor = UIColor.white.withAlphaComponent(0.92)
         transcriptLabel.numberOfLines = 0
-        transcriptLabel.text = terminalTranscriptPreview(window.terminalState)
+        transcriptLabel.attributedText = terminalAttributedPreview(window.terminalState)
 
         [badgeLabel, metaLabel, transcriptLabel].forEach(stack.addArrangedSubview)
         return stack
@@ -346,12 +345,139 @@ final class DesktopRootViewController: UIViewController {
         return "\(state.connectionTitle)\n\(state.columns) x \(state.rows) • \(state.statusMessage)"
     }
 
-    private func terminalTranscriptPreview(_ state: PhaseZeroTerminalState?) -> String {
-        guard let buffer = state?.buffer else {
-            return "No terminal screen yet."
+    private func terminalAttributedPreview(_ state: PhaseZeroTerminalState?) -> NSAttributedString {
+        guard let state else {
+            return NSAttributedString(
+                string: "No terminal screen yet.",
+                attributes: [
+                    .foregroundColor: UIColor.white.withAlphaComponent(0.92),
+                    .font: UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+                ]
+            )
         }
 
-        return buffer.viewportText(insertingCursor: state?.sessionState == .connected)
+        let attributed = NSMutableAttributedString()
+        let lines = state.buffer.renderedStyledLines(insertingCursor: state.sessionState == .connected)
+
+        for (lineIndex, line) in lines.enumerated() {
+            for cell in line.cells {
+                attributed.append(
+                    NSAttributedString(
+                        string: cell.character,
+                        attributes: terminalAttributes(for: cell.style)
+                    )
+                )
+            }
+
+            if lineIndex < lines.count - 1 {
+                attributed.append(
+                    NSAttributedString(
+                        string: "\n",
+                        attributes: terminalAttributes(for: .default)
+                    )
+                )
+            }
+        }
+
+        return attributed
+    }
+
+    private func terminalAttributes(for style: PhaseZeroTerminalTextStyle) -> [NSAttributedString.Key: Any] {
+        let fontSize: CGFloat = 13
+        let baseForeground = terminalUIColor(for: style.foreground, fallback: UIColor.white.withAlphaComponent(0.92))
+        let baseBackground = terminalUIColor(for: style.background, fallback: .clear)
+        let foreground = style.isInverse ? baseBackground.resolvedVisibleColor(fallback: UIColor.white.withAlphaComponent(0.92)) : baseForeground
+        let background = style.isInverse ? baseForeground : baseBackground
+
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: terminalFont(size: fontSize, style: style),
+            .foregroundColor: foreground
+        ]
+
+        if !background.isFullyTransparent {
+            attributes[.backgroundColor] = background
+        }
+
+        if style.isUnderlined {
+            attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
+
+        return attributes
+    }
+
+    private func terminalFont(size: CGFloat, style: PhaseZeroTerminalTextStyle) -> UIFont {
+        let descriptor = UIFontDescriptor.preferredFontDescriptor(withTextStyle: .body)
+            .withDesign(.monospaced) ?? UIFontDescriptor.preferredFontDescriptor(withTextStyle: .body)
+
+        var traits: UIFontDescriptor.SymbolicTraits = []
+        if style.isBold {
+            traits.insert(.traitBold)
+        }
+        if style.isItalic {
+            traits.insert(.traitItalic)
+        }
+
+        let finalDescriptor = descriptor.withSymbolicTraits(traits) ?? descriptor
+        return UIFont(descriptor: finalDescriptor, size: size)
+    }
+
+    private func terminalUIColor(for color: PhaseZeroTerminalColor, fallback: UIColor) -> UIColor {
+        switch color {
+        case .default:
+            return fallback
+        case .ansi256(let index):
+            return terminalANSIColor(index: index)
+        case .rgb(let red, let green, let blue):
+            return UIColor(
+                red: CGFloat(red) / 255.0,
+                green: CGFloat(green) / 255.0,
+                blue: CGFloat(blue) / 255.0,
+                alpha: 1.0
+            )
+        }
+    }
+
+    private func terminalANSIColor(index: Int) -> UIColor {
+        let palette16: [UIColor] = [
+            UIColor(red: 0.10, green: 0.10, blue: 0.10, alpha: 1.0),
+            UIColor(red: 0.80, green: 0.24, blue: 0.22, alpha: 1.0),
+            UIColor(red: 0.35, green: 0.69, blue: 0.30, alpha: 1.0),
+            UIColor(red: 0.84, green: 0.67, blue: 0.25, alpha: 1.0),
+            UIColor(red: 0.30, green: 0.49, blue: 0.85, alpha: 1.0),
+            UIColor(red: 0.69, green: 0.35, blue: 0.78, alpha: 1.0),
+            UIColor(red: 0.28, green: 0.67, blue: 0.71, alpha: 1.0),
+            UIColor(red: 0.85, green: 0.85, blue: 0.85, alpha: 1.0),
+            UIColor(red: 0.35, green: 0.35, blue: 0.35, alpha: 1.0),
+            UIColor(red: 0.95, green: 0.36, blue: 0.34, alpha: 1.0),
+            UIColor(red: 0.49, green: 0.86, blue: 0.39, alpha: 1.0),
+            UIColor(red: 0.98, green: 0.83, blue: 0.37, alpha: 1.0),
+            UIColor(red: 0.42, green: 0.62, blue: 0.97, alpha: 1.0),
+            UIColor(red: 0.83, green: 0.52, blue: 0.95, alpha: 1.0),
+            UIColor(red: 0.43, green: 0.84, blue: 0.88, alpha: 1.0),
+            UIColor(red: 0.97, green: 0.97, blue: 0.97, alpha: 1.0)
+        ]
+
+        let clamped = max(0, min(255, index))
+        if clamped < palette16.count {
+            return palette16[clamped]
+        }
+
+        if clamped >= 16 && clamped <= 231 {
+            let cubeIndex = clamped - 16
+            let red = cubeIndex / 36
+            let green = (cubeIndex % 36) / 6
+            let blue = cubeIndex % 6
+            let values: [CGFloat] = [0, 95, 135, 175, 215, 255]
+            return UIColor(
+                red: values[red] / 255.0,
+                green: values[green] / 255.0,
+                blue: values[blue] / 255.0,
+                alpha: 1.0
+            )
+        }
+
+        let gray = CGFloat(8 + (clamped - 232) * 10) / 255.0
+        return UIColor(red: gray, green: gray, blue: gray, alpha: 1.0)
     }
 
     @objc
@@ -380,5 +506,18 @@ final class DesktopRootViewController: UIViewController {
             await AppEnvironment.phaseZero.focusWindow(selectedWindow.id)
             await AppEnvironment.phaseZero.registerControlInput("Desktop tap focus: \(selectedWindow.title)")
         }
+    }
+}
+
+private extension UIColor {
+    var isFullyTransparent: Bool {
+        cgColor.alpha == 0
+    }
+
+    func resolvedVisibleColor(fallback: UIColor) -> UIColor {
+        if isFullyTransparent {
+            return fallback
+        }
+        return self
     }
 }
