@@ -169,6 +169,16 @@ public actor VNCRuntime {
         surface.qualityPreset = next.rawValue
         surface.statusMessage = "Quality preset changed to \(next.rawValue)"
         surface.appendEvent("Quality -> \(next.rawValue)")
+
+        if surface.sessionState == .connected {
+            do {
+                try await client?.updateQualityPreset(next)
+            } catch {
+                await presentTransportFailure(error)
+                return
+            }
+        }
+
         await publish()
     }
 

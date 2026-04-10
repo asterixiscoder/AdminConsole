@@ -1,4 +1,5 @@
 import ConnectionKit
+import CommonCrypto
 import Foundation
 import Network
 
@@ -21,6 +22,7 @@ public enum RFBClientError: LocalizedError, Sendable {
     case connectionClosed
     case securityNegotiationFailed(String)
     case unsupportedAuthentication
+    case missingPassword
     case authenticationFailed(String)
     case unsupportedEncoding(Int32)
     case invalidServerMessage(UInt8)
@@ -36,7 +38,9 @@ public enum RFBClientError: LocalizedError, Sendable {
         case .securityNegotiationFailed(let message):
             return "VNC security negotiation failed: \(message)"
         case .unsupportedAuthentication:
-            return "This VNC server requires password authentication. The current transport supports security type None only."
+            return "This VNC server requires an authentication method the current client does not support."
+        case .missingPassword:
+            return "This VNC server requires a password, but none was provided."
         case .authenticationFailed(let message):
             return "VNC authentication failed: \(message)"
         case .unsupportedEncoding(let encoding):
@@ -52,6 +56,12 @@ public enum RFBClientError: LocalizedError, Sendable {
 }
 
 public actor RFBClient {
+    private enum ProtocolVersion: String {
+        case rfb33 = "RFB 003.003\n"
+        case rfb37 = "RFB 003.007\n"
+        case rfb38 = "RFB 003.008\n"
+    }
+
     private let configuration: VNCSessionConfiguration
     private let queue: DispatchQueue
     private let onFramebufferUpdate: @Sendable (RFBFramebufferSnapshot) async -> Void
@@ -63,6 +73,7 @@ public actor RFBClient {
     private var framebuffer = RFBFramebuffer(width: 0, height: 0)
     private var desktopName = "Remote Desktop"
     private var receiveTask: Task<Void, Never>?
+    private var negotiatedProtocolVersion: ProtocolVersion = .rfb38
 
     public init(
         configuration: VNCSessionConfiguration,
@@ -139,6 +150,11 @@ public actor RFBClient {
         }
     }
 
+    public func updateQualityPreset(_ preset: VNCQualityPreset) async throws {
+        try await setEncodings(preferredEncodings(for: preset))
+        try await requestFramebufferUpdate(incremental: false)
+    }
+
     private func handleConnectionState(_ state: NWConnection.State) {
         switch state {
         case .ready:
@@ -180,19 +196,20 @@ public actor RFBClient {
             throw RFBClientError.invalidProtocolVersion("invalid-ascii")
         }
 
-        let negotiatedVersion: String
+        let negotiatedVersion: ProtocolVersion
         if versionString.hasPrefix("RFB 003.003") {
-            negotiatedVersion = "RFB 003.003\n"
+            negotiatedVersion = .rfb33
         } else if versionString.hasPrefix("RFB 003.007") {
-            negotiatedVersion = "RFB 003.007\n"
+            negotiatedVersion = .rfb37
         } else if versionString.hasPrefix("RFB 003.008") {
-            negotiatedVersion = "RFB 003.008\n"
+            negotiatedVersion = .rfb38
         } else {
             throw RFBClientError.invalidProtocolVersion(versionString.trimmingCharacters(in: .newlines))
         }
 
-        try await send(Data(negotiatedVersion.utf8))
-        if negotiatedVersion == "RFB 003.003\n" {
+        negotiatedProtocolVersion = negotiatedVersion
+        try await send(Data(negotiatedVersion.rawValue.utf8))
+        if negotiatedVersion == .rfb33 {
             try await negotiateSecurityForRFB33()
         } else {
             try await negotiateSecurityTypes()
@@ -201,7 +218,7 @@ public actor RFBClient {
         try await send(Data([1]))
         try await readServerInit()
         try await setPixelFormat(activePixelFormat)
-        try await setEncodings([0])
+        try await setEncodings(preferredEncodings(for: configuration.qualityPreset))
     }
 
     private func negotiateSecurityForRFB33() async throws {
@@ -210,7 +227,7 @@ public actor RFBClient {
         case 1:
             return
         case 2:
-            throw RFBClientError.unsupportedAuthentication
+            try await performVNCAuthentication()
         default:
             let reason = try await readFailureReasonIfPresent()
             throw RFBClientError.securityNegotiationFailed(reason ?? "security type \(securityType)")
@@ -227,6 +244,12 @@ public actor RFBClient {
 
         let data = try await receiveExact(count: Int(typeCount))
         let types = Array(data)
+        if types.contains(2) {
+            try await send(Data([2]))
+            try await performVNCAuthentication()
+            return
+        }
+
         if types.contains(1) {
             try await send(Data([1]))
             let result = try await receiveUInt32()
@@ -237,11 +260,23 @@ public actor RFBClient {
             return
         }
 
-        if types.contains(2) {
-            throw RFBClientError.unsupportedAuthentication
+        throw RFBClientError.securityNegotiationFailed("No supported security type. Server offered: \(types)")
+    }
+
+    private func performVNCAuthentication() async throws {
+        guard !configuration.password.isEmpty else {
+            throw RFBClientError.missingPassword
         }
 
-        throw RFBClientError.securityNegotiationFailed("No supported security type. Server offered: \(types)")
+        let challenge = try await receiveExact(count: 16)
+        let response = try VNCAuthentication.encryptChallenge(challenge, password: configuration.password)
+        try await send(response)
+
+        let result = try await receiveUInt32()
+        guard result == 0 else {
+            let reason = try await readFailureReasonIfPresent()
+            throw RFBClientError.authenticationFailed(reason ?? "security result \(result)")
+        }
     }
 
     private func readServerInit() async throws {
@@ -326,23 +361,68 @@ public actor RFBClient {
             let height = Int(try await receiveUInt16())
             let encoding = try await receiveInt32()
 
-            guard encoding == 0 else {
+            switch encoding {
+            case 0:
+                let bytesPerPixel = activePixelFormat.bytesPerPixel
+                let rawData = try await receiveExact(count: width * height * bytesPerPixel)
+                framebuffer.applyRawRectangle(
+                    x: x,
+                    y: y,
+                    width: width,
+                    height: height,
+                    pixelFormat: activePixelFormat,
+                    bytes: rawData
+                )
+            case 1:
+                let sourceX = Int(try await receiveUInt16())
+                let sourceY = Int(try await receiveUInt16())
+                framebuffer.copyRectangle(
+                    fromX: sourceX,
+                    fromY: sourceY,
+                    toX: x,
+                    toY: y,
+                    width: width,
+                    height: height
+                )
+            case 2:
+                try await handleRRERectangle(x: x, y: y, width: width, height: height)
+            case -223:
+                framebuffer.resize(width: width, height: height)
+            case -224:
+                break
+            default:
                 throw RFBClientError.unsupportedEncoding(encoding)
             }
-
-            let bytesPerPixel = activePixelFormat.bytesPerPixel
-            let rawData = try await receiveExact(count: width * height * bytesPerPixel)
-            framebuffer.applyRawRectangle(
-                x: x,
-                y: y,
-                width: width,
-                height: height,
-                pixelFormat: activePixelFormat,
-                bytes: rawData
-            )
         }
 
         await onFramebufferUpdate(makeSnapshot())
+    }
+
+    private func handleRRERectangle(x: Int, y: Int, width: Int, height: Int) async throws {
+        let subrectangleCount = Int(try await receiveUInt32())
+        let backgroundPixel = try await receivePixel()
+        framebuffer.fillRectangle(
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            pixel: backgroundPixel
+        )
+
+        for _ in 0..<subrectangleCount {
+            let foregroundPixel = try await receivePixel()
+            let subX = Int(try await receiveUInt16())
+            let subY = Int(try await receiveUInt16())
+            let subWidth = Int(try await receiveUInt16())
+            let subHeight = Int(try await receiveUInt16())
+            framebuffer.fillRectangle(
+                x: x + subX,
+                y: y + subY,
+                width: subWidth,
+                height: subHeight,
+                pixel: foregroundPixel
+            )
+        }
     }
 
     private func makeSnapshot() -> RFBFramebufferSnapshot {
@@ -444,9 +524,33 @@ public actor RFBClient {
         return Int32(bitPattern: value)
     }
 
+    private func receivePixel() async throws -> UInt32 {
+        let data = try await receiveExact(count: activePixelFormat.bytesPerPixel)
+        return data.withUnsafeBytes { pointer in
+            let baseAddress = pointer.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            guard let baseAddress else {
+                return UInt32(0)
+            }
+            return activePixelFormat.decodePixel(
+                bytes: UnsafeBufferPointer(start: baseAddress, count: activePixelFormat.bytesPerPixel)
+            )
+        }
+    }
+
     private func receiveString(count: Int) async throws -> String {
         let data = try await receiveExact(count: count)
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private func preferredEncodings(for preset: VNCQualityPreset) -> [Int32] {
+        switch preset {
+        case .low:
+            return [2, 1, 0, -223, -224]
+        case .balanced:
+            return [1, 2, 0, -223, -224]
+        case .high:
+            return [0, 1, 2, -223, -224]
+        }
     }
 }
 
@@ -493,6 +597,55 @@ private struct RFBFramebuffer {
                 }
             }
         }
+    }
+
+    mutating func fillRectangle(x: Int, y: Int, width: Int, height: Int, pixel: UInt32) {
+        guard width > 0, height > 0 else {
+            return
+        }
+
+        for row in 0..<height {
+            for column in 0..<width {
+                let destinationX = x + column
+                let destinationY = y + row
+                guard destinationX >= 0, destinationX < self.width, destinationY >= 0, destinationY < self.height else {
+                    continue
+                }
+
+                pixels[destinationY * self.width + destinationX] = pixel
+            }
+        }
+    }
+
+    mutating func copyRectangle(fromX: Int, fromY: Int, toX: Int, toY: Int, width: Int, height: Int) {
+        guard width > 0, height > 0 else {
+            return
+        }
+
+        let snapshot = pixels
+        for row in 0..<height {
+            for column in 0..<width {
+                let sourceX = fromX + column
+                let sourceY = fromY + row
+                let destinationX = toX + column
+                let destinationY = toY + row
+
+                guard sourceX >= 0, sourceX < self.width,
+                      sourceY >= 0, sourceY < self.height,
+                      destinationX >= 0, destinationX < self.width,
+                      destinationY >= 0, destinationY < self.height else {
+                    continue
+                }
+
+                pixels[destinationY * self.width + destinationX] = snapshot[sourceY * self.width + sourceX]
+            }
+        }
+    }
+
+    mutating func resize(width: Int, height: Int) {
+        self.width = width
+        self.height = height
+        self.pixels = Array(repeating: 0x181C24FF, count: max(0, width * height))
     }
 }
 
@@ -646,6 +799,71 @@ enum RFBKeySymbolTranslator {
             default:
                 result.append(scalar.value)
             }
+        }
+        return result
+    }
+}
+
+enum VNCAuthentication {
+    static func encryptChallenge(_ challenge: Data, password: String) throws -> Data {
+        let key = makeDESKey(from: password)
+        return try encryptDESBlock(challenge, key: key)
+    }
+
+    static func makeDESKey(from password: String) -> Data {
+        let bytes = Array(password.utf8.prefix(8))
+        var keyBytes = Array(repeating: UInt8(0), count: 8)
+
+        for index in 0..<8 {
+            let byte = index < bytes.count ? bytes[index] : 0
+            keyBytes[index] = reverseBits(byte)
+        }
+
+        return Data(keyBytes)
+    }
+
+    private static func encryptDESBlock(_ challenge: Data, key: Data) throws -> Data {
+        precondition(challenge.count == 16)
+        precondition(key.count == 8)
+
+        var output = Data(count: challenge.count)
+        let outputCount = output.count
+        var encryptedBytes = 0
+
+        let status = output.withUnsafeMutableBytes { outputPointer in
+            challenge.withUnsafeBytes { inputPointer in
+                key.withUnsafeBytes { keyPointer in
+                    CCCrypt(
+                        CCOperation(kCCEncrypt),
+                        CCAlgorithm(kCCAlgorithmDES),
+                        CCOptions(kCCOptionECBMode),
+                        keyPointer.baseAddress,
+                        key.count,
+                        nil,
+                        inputPointer.baseAddress,
+                        challenge.count,
+                        outputPointer.baseAddress,
+                        outputCount,
+                        &encryptedBytes
+                    )
+                }
+            }
+        }
+
+        guard status == kCCSuccess else {
+            throw RFBClientError.authenticationFailed("DES encryption failed with status \(status)")
+        }
+
+        output.removeSubrange(encryptedBytes..<output.count)
+        return output
+    }
+
+    private static func reverseBits(_ value: UInt8) -> UInt8 {
+        var input = value
+        var result: UInt8 = 0
+        for _ in 0..<8 {
+            result = (result << 1) | (input & 1)
+            input >>= 1
         }
         return result
     }

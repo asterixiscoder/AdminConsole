@@ -31,4 +31,10 @@ final class RFBClientTests: XCTestCase {
 
         XCTAssertEqual(pixel, 0x112233FF)
     }
+
+    func testVNCAuthenticationBuildsBitReversedDESKey() {
+        let key = VNCAuthentication.makeDESKey(from: "COW")
+
+        XCTAssertEqual(Array(key), [0xC2, 0xF2, 0xEA, 0, 0, 0, 0, 0])
+    }
 }

@@ -19,7 +19,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
         switch connectingSceneSession.role {
-        case .windowExternalDisplay:
+        case .windowExternalDisplayNonInteractive:
             return UISceneConfiguration(
                 name: "External Desktop Configuration",
                 sessionRole: connectingSceneSession.role
