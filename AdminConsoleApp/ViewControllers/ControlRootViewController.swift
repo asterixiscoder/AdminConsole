@@ -1,8 +1,9 @@
 import AppPlatform
+import UniformTypeIdentifiers
 import UIKit
 import WebKit
 
-final class ControlRootViewController: UIViewController, UITextFieldDelegate {
+final class ControlRootViewController: UIViewController, UITextFieldDelegate, UIDocumentPickerDelegate {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
     private let summaryLabel = UILabel()
@@ -12,6 +13,11 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
     private let inputLabel = UILabel()
     private let terminalStatusLabel = UILabel()
     private let terminalPreviewView = UITextView()
+    private let filesStatusLabel = UILabel()
+    private let filesPreviewView = UITextView()
+    private let filesEntriesStack = UIStackView()
+    private let newFolderField = UITextField()
+    private let renameEntryField = UITextField()
     private let trackpadView = UIView()
     private let trackpadCursor = UIView()
     private let keyboardHintLabel = UILabel()
@@ -22,6 +28,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
     private let commandField = UITextField()
     private var updatesTask: Task<Void, Never>?
     private var latestSnapshot: PhaseZeroSnapshot?
+    private var isAwaitingFilesExport = false
 
     override var canBecomeFirstResponder: Bool {
         true
@@ -44,7 +51,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         summaryLabel.font = .preferredFont(forTextStyle: .title3)
         summaryLabel.numberOfLines = 0
 
-        [statusLabel, focusedLabel, cursorLabel, inputLabel, terminalStatusLabel].forEach { label in
+        [statusLabel, focusedLabel, cursorLabel, inputLabel, terminalStatusLabel, filesStatusLabel].forEach { label in
             label.font = .preferredFont(forTextStyle: .body)
             label.numberOfLines = 0
         }
@@ -59,6 +66,20 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         terminalPreviewView.textContainerInset = .zero
         terminalPreviewView.textContainer.lineFragmentPadding = 0
         terminalPreviewView.heightAnchor.constraint(equalToConstant: 180).isActive = true
+
+        filesPreviewView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        filesPreviewView.textColor = .secondaryLabel
+        filesPreviewView.text = "No files window selected."
+        filesPreviewView.backgroundColor = .clear
+        filesPreviewView.isEditable = false
+        filesPreviewView.isSelectable = true
+        filesPreviewView.isScrollEnabled = true
+        filesPreviewView.textContainerInset = .zero
+        filesPreviewView.textContainer.lineFragmentPadding = 0
+        filesPreviewView.heightAnchor.constraint(equalToConstant: 160).isActive = true
+
+        filesEntriesStack.axis = .vertical
+        filesEntriesStack.spacing = 8
 
         keyboardHintLabel.text = """
         Keyboard prototype
@@ -100,13 +121,14 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         let trackpadCard = makeCard(arrangedSubviews: [trackpadView, keyboardHintLabel])
         let actionsCard = makeCard(arrangedSubviews: [makeButtonsRow()])
         let sshCard = makeCard(arrangedSubviews: [makeSSHControls()])
+        let filesCard = makeCard(arrangedSubviews: [makeFilesControls()])
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.axis = .vertical
         stackView.spacing = 18
 
-        [infoCard, trackpadCard, actionsCard, sshCard].forEach(stackView.addArrangedSubview)
+        [infoCard, trackpadCard, actionsCard, sshCard, filesCard].forEach(stackView.addArrangedSubview)
         scrollView.addSubview(stackView)
         view.addSubview(scrollView)
 
@@ -228,6 +250,9 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         inputLabel.text = "Last input: \(snapshot.lastInputDescription)"
         terminalStatusLabel.text = terminalStatusText(snapshot: snapshot)
         terminalPreviewView.text = terminalPreview(snapshot: snapshot)
+        filesStatusLabel.text = filesStatusText(snapshot: snapshot)
+        filesPreviewView.text = filesPreview(snapshot: snapshot)
+        refreshFilesEntries(snapshot: snapshot)
 
         applyTrackpadCursor(snapshot: snapshot)
     }
@@ -361,6 +386,89 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         return stack
     }
 
+    private func makeFilesControls() -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+
+        let titleLabel = UILabel()
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.numberOfLines = 0
+        titleLabel.text = "Files Workspace"
+
+        configureField(newFolderField, placeholder: "New folder name")
+        configureField(renameEntryField, placeholder: "Rename selected entry to")
+
+        let controls = UIStackView()
+        controls.axis = .horizontal
+        controls.spacing = 8
+        controls.distribution = .fillEqually
+
+        let upButton = UIButton(type: .system)
+        upButton.configuration = .filled()
+        upButton.configuration?.title = "Up"
+        upButton.addTarget(self, action: #selector(navigateUpInFiles), for: .touchUpInside)
+
+        let openButton = UIButton(type: .system)
+        openButton.configuration = .tinted()
+        openButton.configuration?.title = "Open Selected"
+        openButton.addTarget(self, action: #selector(openSelectedFilesEntry), for: .touchUpInside)
+
+        let refreshButton = UIButton(type: .system)
+        refreshButton.configuration = .plain()
+        refreshButton.configuration?.title = "Refresh"
+        refreshButton.addTarget(self, action: #selector(refreshFilesWindow), for: .touchUpInside)
+
+        let importButton = UIButton(type: .system)
+        importButton.configuration = .plain()
+        importButton.configuration?.title = "Import"
+        importButton.addTarget(self, action: #selector(importFilesIntoWorkspace), for: .touchUpInside)
+
+        let exportButton = UIButton(type: .system)
+        exportButton.configuration = .plain()
+        exportButton.configuration?.title = "Export"
+        exportButton.addTarget(self, action: #selector(exportSelectedFilesEntry), for: .touchUpInside)
+
+        [upButton, openButton, refreshButton, importButton, exportButton].forEach(controls.addArrangedSubview)
+        controls.distribution = .fillProportionally
+
+        let editControls = UIStackView()
+        editControls.axis = .horizontal
+        editControls.spacing = 8
+        editControls.distribution = .fillEqually
+
+        let createButton = UIButton(type: .system)
+        createButton.configuration = .filled()
+        createButton.configuration?.title = "Create Folder"
+        createButton.addTarget(self, action: #selector(createFolderInFiles), for: .touchUpInside)
+
+        let renameButton = UIButton(type: .system)
+        renameButton.configuration = .tinted()
+        renameButton.configuration?.title = "Rename Selected"
+        renameButton.addTarget(self, action: #selector(renameSelectedFilesEntry), for: .touchUpInside)
+
+        let deleteButton = UIButton(type: .system)
+        deleteButton.configuration = .plain()
+        deleteButton.configuration?.title = "Delete Selected"
+        deleteButton.configuration?.baseForegroundColor = .systemRed
+        deleteButton.addTarget(self, action: #selector(deleteSelectedFilesEntry), for: .touchUpInside)
+
+        [createButton, renameButton, deleteButton].forEach(editControls.addArrangedSubview)
+
+        [
+            titleLabel,
+            filesStatusLabel,
+            controls,
+            newFolderField,
+            renameEntryField,
+            editControls,
+            filesEntriesStack,
+            filesPreviewView
+        ].forEach(stack.addArrangedSubview)
+
+        return stack
+    }
+
     private func makeKeyCommand(
         _ input: String,
         modifiers: UIKeyModifierFlags = [],
@@ -468,6 +576,96 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
     }
 
     @objc
+    private func navigateUpInFiles() {
+        Task {
+            await AppEnvironment.phaseZero.navigateUpInFocusedFiles()
+            await AppEnvironment.phaseZero.registerControlInput("Files navigate up")
+        }
+    }
+
+    @objc
+    private func openSelectedFilesEntry() {
+        Task {
+            await AppEnvironment.phaseZero.openSelectedFilesEntry()
+            await AppEnvironment.phaseZero.registerControlInput("Files open selected entry")
+        }
+    }
+
+    @objc
+    private func refreshFilesWindow() {
+        Task {
+            await AppEnvironment.phaseZero.refreshFocusedFiles()
+            await AppEnvironment.phaseZero.registerControlInput("Files refresh")
+        }
+    }
+
+    @objc
+    private func createFolderInFiles() {
+        let name = newFolderField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty else {
+            return
+        }
+
+        newFolderField.text = nil
+
+        Task {
+            await AppEnvironment.phaseZero.createFolderInFocusedFiles(named: name)
+            await AppEnvironment.phaseZero.registerControlInput("Files create folder")
+        }
+    }
+
+    @objc
+    private func renameSelectedFilesEntry() {
+        let name = renameEntryField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty else {
+            return
+        }
+
+        renameEntryField.text = nil
+
+        Task {
+            await AppEnvironment.phaseZero.renameSelectedFilesEntry(to: name)
+            await AppEnvironment.phaseZero.registerControlInput("Files rename selected entry")
+        }
+    }
+
+    @objc
+    private func deleteSelectedFilesEntry() {
+        Task {
+            await AppEnvironment.phaseZero.deleteSelectedFilesEntry()
+            await AppEnvironment.phaseZero.registerControlInput("Files delete selected entry")
+        }
+    }
+
+    @objc
+    private func importFilesIntoWorkspace() {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType.item], asCopy: false)
+        picker.delegate = self
+        picker.allowsMultipleSelection = true
+        isAwaitingFilesExport = false
+        present(picker, animated: true)
+    }
+
+    @objc
+    private func exportSelectedFilesEntry() {
+        Task {
+            guard let exportURL = await AppEnvironment.phaseZero.exportURLForSelectedFilesEntry() else {
+                await AppEnvironment.phaseZero.registerControlInput("Files export skipped: no selected entry")
+                return
+            }
+
+            await MainActor.run {
+                let picker = UIDocumentPickerViewController(forExporting: [exportURL], asCopy: true)
+                picker.delegate = self
+                self.isAwaitingFilesExport = true
+                self.present(picker, animated: true)
+            }
+
+            await AppEnvironment.phaseZero.registerControlInput("Files export started")
+        }
+    }
+
+    @objc
     private func copyTerminalSelection() {
         Task {
             guard let selectedText = await AppEnvironment.phaseZero.selectedTextForFocusedTerminal(),
@@ -555,11 +753,41 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
             sendCommandToTerminal()
         case passwordField:
             connectSSH()
+        case newFolderField:
+            createFolderInFiles()
+        case renameEntryField:
+            renameSelectedFilesEntry()
         default:
             textField.resignFirstResponder()
         }
 
         return true
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        if isAwaitingFilesExport {
+            isAwaitingFilesExport = false
+            Task {
+                await AppEnvironment.phaseZero.registerControlInput("Files export completed")
+            }
+            return
+        }
+
+        Task {
+            await AppEnvironment.phaseZero.importIntoFocusedFiles(from: urls)
+            await AppEnvironment.phaseZero.registerControlInput("Files import completed")
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        let wasExport = isAwaitingFilesExport
+        isAwaitingFilesExport = false
+
+        Task {
+            await AppEnvironment.phaseZero.registerControlInput(
+                wasExport ? "Files export cancelled" : "Files import cancelled"
+            )
+        }
     }
 
     private var routesHardwareKeyboardToTerminal: Bool {
@@ -628,6 +856,19 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         return snapshot.windows.last(where: { $0.kind == .terminal })
     }
 
+    private func focusedFilesWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
+        guard let snapshot else {
+            return nil
+        }
+
+        if let focusedWindowID = snapshot.focusedWindowID,
+           let focusedWindow = snapshot.windows.first(where: { $0.id == focusedWindowID && $0.kind == .files }) {
+            return focusedWindow
+        }
+
+        return snapshot.windows.last(where: { $0.kind == .files })
+    }
+
     private func terminalStatusText(snapshot: PhaseZeroSnapshot) -> String {
         guard let terminalWindow = focusedTerminalWindow(snapshot: snapshot),
               let terminalState = terminalWindow.terminalState else {
@@ -660,6 +901,68 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
 
         let lines = terminalState.buffer.renderedViewportLines(insertingCursor: terminalState.sessionState == .connected)
         return lines.suffix(10).joined(separator: "\n")
+    }
+
+    private func filesStatusText(snapshot: PhaseZeroSnapshot) -> String {
+        guard let filesState = focusedFilesWindow(snapshot: snapshot)?.filesState else {
+            return "Files: no files window selected"
+        }
+
+        let selectedName = filesState.selectedEntry?.name ?? "none"
+        return """
+        Workspace: \(filesState.workspaceName)
+        Path: \(filesState.currentPath)
+        Status: \(filesState.statusMessage)
+        Selected: \(selectedName)
+        """
+    }
+
+    private func filesPreview(snapshot: PhaseZeroSnapshot) -> String {
+        focusedFilesWindow(snapshot: snapshot)?.filesState?.previewText ?? "No files window selected."
+    }
+
+    private func refreshFilesEntries(snapshot: PhaseZeroSnapshot) {
+        filesEntriesStack.arrangedSubviews.forEach {
+            filesEntriesStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+
+        guard let filesState = focusedFilesWindow(snapshot: snapshot)?.filesState else {
+            return
+        }
+
+        let entries = Array(filesState.entries.prefix(8))
+        for entry in entries {
+            let button = UIButton(type: .system)
+            button.configuration = .plain()
+            let prefix = entry.kind == .directory ? "[DIR]" : "[FILE]"
+            let marker = entry.id == filesState.selectedEntryID ? "•" : " "
+            button.configuration?.title = "\(marker) \(prefix) \(entry.name)"
+            button.contentHorizontalAlignment = .leading
+            button.addAction(
+                UIAction { [weak self] _ in
+                    self?.selectFilesEntry(id: entry.id)
+                },
+                for: .touchUpInside
+            )
+            filesEntriesStack.addArrangedSubview(button)
+        }
+
+        if filesState.entries.count > entries.count {
+            let moreLabel = UILabel()
+            moreLabel.font = .preferredFont(forTextStyle: .caption1)
+            moreLabel.textColor = .secondaryLabel
+            moreLabel.numberOfLines = 0
+            moreLabel.text = "Showing first \(entries.count) of \(filesState.entries.count) items."
+            filesEntriesStack.addArrangedSubview(moreLabel)
+        }
+    }
+
+    private func selectFilesEntry(id: String) {
+        Task {
+            await AppEnvironment.phaseZero.selectFocusedFilesEntry(id: id)
+            await AppEnvironment.phaseZero.registerControlInput("Files select entry")
+        }
     }
 
     private func terminalInput(for key: UIKey) -> String? {

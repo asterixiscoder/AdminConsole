@@ -456,6 +456,87 @@ public struct TerminalSurfaceState: Codable, Equatable, Sendable {
     }
 }
 
+public enum FilesEntryKind: String, Codable, CaseIterable, Sendable {
+    case directory
+    case file
+}
+
+public struct FilesEntry: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var relativePath: String
+    public var kind: FilesEntryKind
+    public var byteSize: Int64?
+
+    public init(
+        id: String,
+        name: String,
+        relativePath: String,
+        kind: FilesEntryKind,
+        byteSize: Int64? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.relativePath = relativePath
+        self.kind = kind
+        self.byteSize = byteSize
+    }
+}
+
+public struct FilesSurfaceState: Codable, Equatable, Sendable {
+    public var workspaceName: String
+    public var currentPath: String
+    public var entries: [FilesEntry]
+    public var selectedEntryID: String?
+    public var statusMessage: String
+    public var previewText: String
+    public var canNavigateUp: Bool
+
+    public init(
+        workspaceName: String = "Workspace",
+        currentPath: String = "/",
+        entries: [FilesEntry] = [],
+        selectedEntryID: String? = nil,
+        statusMessage: String = "Preparing workspace",
+        previewText: String = "Open the Files window on iPhone to browse the in-app workspace.",
+        canNavigateUp: Bool = false
+    ) {
+        self.workspaceName = workspaceName
+        self.currentPath = currentPath
+        self.entries = entries
+        self.selectedEntryID = selectedEntryID
+        self.statusMessage = statusMessage
+        self.previewText = previewText
+        self.canNavigateUp = canNavigateUp
+    }
+
+    public static func idle(workspaceName: String = "Workspace") -> FilesSurfaceState {
+        FilesSurfaceState(
+            workspaceName: workspaceName,
+            currentPath: "/",
+            entries: [],
+            selectedEntryID: nil,
+            statusMessage: "Preparing workspace",
+            previewText: "Open the Files window on iPhone to browse the in-app workspace.",
+            canNavigateUp: false
+        )
+    }
+
+    public var selectedEntry: FilesEntry? {
+        entries.first { $0.id == selectedEntryID }
+    }
+
+    public var displayTitle: String {
+        let trimmedPath = currentPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !trimmedPath.isEmpty else {
+            return "Files"
+        }
+
+        let component = trimmedPath.split(separator: "/").last.map(String.init) ?? workspaceName
+        return "Files - \(component)"
+    }
+}
+
 public struct NormalizedRect: Codable, Equatable, Sendable {
     public var x: Double
     public var y: Double
@@ -479,6 +560,7 @@ public struct DesktopWindow: Identifiable, Codable, Equatable, Sendable {
     public var frame: NormalizedRect
     public var isFocused: Bool
     public var terminalState: TerminalSurfaceState?
+    public var filesState: FilesSurfaceState?
 
     public init(
         id: WindowID = WindowID(),
@@ -486,7 +568,8 @@ public struct DesktopWindow: Identifiable, Codable, Equatable, Sendable {
         title: String,
         frame: NormalizedRect = .defaultWindow,
         isFocused: Bool = false,
-        terminalState: TerminalSurfaceState? = nil
+        terminalState: TerminalSurfaceState? = nil,
+        filesState: FilesSurfaceState? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -494,6 +577,7 @@ public struct DesktopWindow: Identifiable, Codable, Equatable, Sendable {
         self.frame = frame
         self.isFocused = isFocused
         self.terminalState = terminalState
+        self.filesState = filesState
     }
 }
 

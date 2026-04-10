@@ -1,4 +1,5 @@
 import DesktopDomain
+import FilesFeature
 import Foundation
 import SSHKit
 
@@ -24,6 +25,7 @@ public struct RuntimeHandle: Hashable, Sendable {
 public actor RuntimeRegistry {
     private var handles: [WindowID: RuntimeHandle] = [:]
     private var terminalRuntimes: [WindowID: SSHTerminalRuntime] = [:]
+    private var filesRuntimes: [WindowID: FilesWorkspaceRuntime] = [:]
 
     public init() {}
 
@@ -40,6 +42,13 @@ public actor RuntimeRegistry {
         return handle
     }
 
+    public func registerFiles(_ runtime: FilesWorkspaceRuntime, for windowID: WindowID) -> RuntimeHandle {
+        let handle = RuntimeHandle(windowID: windowID, kind: .files)
+        handles[windowID] = handle
+        filesRuntimes[windowID] = runtime
+        return handle
+    }
+
     public func handle(for windowID: WindowID) -> RuntimeHandle? {
         handles[windowID]
     }
@@ -48,10 +57,16 @@ public actor RuntimeRegistry {
         terminalRuntimes[windowID]
     }
 
+    public func filesRuntime(for windowID: WindowID) -> FilesWorkspaceRuntime? {
+        filesRuntimes[windowID]
+    }
+
     public func remove(windowID: WindowID) async {
         if let runtime = terminalRuntimes.removeValue(forKey: windowID) {
             await runtime.disconnect()
         }
+
+        filesRuntimes.removeValue(forKey: windowID)
 
         handles.removeValue(forKey: windowID)
     }

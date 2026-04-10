@@ -43,6 +43,7 @@ let package = Package(
                 "DesktopCompositor",
                 "InputKit",
                 "ConnectionKit",
+                "FilesFeature",
                 "SSHKit",
                 "PersistenceKit",
                 "SecurityKit",
@@ -61,6 +62,7 @@ let package = Package(
             name: "RuntimeRegistry",
             dependencies: [
                 "DesktopDomain",
+                "FilesFeature",
                 "SSHKit"
             ]
         ),
@@ -153,6 +155,13 @@ let package = Package(
             dependencies: [
                 "DesktopDomain",
                 "SSHKit"
+            ]
+        ),
+        .testTarget(
+            name: "FilesFeatureTests",
+            dependencies: [
+                "DesktopDomain",
+                "FilesFeature"
             ]
         ),
         .testTarget(

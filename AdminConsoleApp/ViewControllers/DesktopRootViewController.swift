@@ -237,6 +237,10 @@ final class DesktopRootViewController: UIViewController {
             return "\(terminalState.connectionTitle) • \(terminalState.statusMessage)"
         }
 
+        if let filesState = window.filesState {
+            return "\(filesState.currentPath) • \(filesState.statusMessage)"
+        }
+
         return window.id.rawValue.uuidString.prefix(8) + " • " + snapshot.lastInputDescription
     }
 
@@ -245,10 +249,7 @@ final class DesktopRootViewController: UIViewController {
         case .terminal:
             return makeTerminalContent(window: window)
         case .files:
-            return makePlaceholderContent(
-                title: "Sandbox workspace",
-                detail: "Local file manager module is still scaffolded, but the desktop shell can already keep focus and layout state."
-            )
+            return makeFilesContent(window: window)
         case .browser:
             return makePlaceholderContent(
                 title: "Browser runtime placeholder",
@@ -299,6 +300,46 @@ final class DesktopRootViewController: UIViewController {
         transcriptView.addGestureRecognizer(selectionGesture)
 
         [badgeLabel, metaLabel, transcriptView].forEach(stack.addArrangedSubview)
+        return stack
+    }
+
+    private func makeFilesContent(window: PhaseZeroWindow) -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 10
+
+        let pathLabel = UILabel()
+        pathLabel.font = .preferredFont(forTextStyle: .caption1)
+        pathLabel.textColor = UIColor.systemTeal
+        pathLabel.numberOfLines = 0
+        pathLabel.text = filesPathText(window.filesState)
+
+        let metaLabel = UILabel()
+        metaLabel.font = .preferredFont(forTextStyle: .footnote)
+        metaLabel.textColor = UIColor.white.withAlphaComponent(0.74)
+        metaLabel.numberOfLines = 0
+        metaLabel.text = filesMetaText(window.filesState)
+
+        let entriesView = UITextView()
+        entriesView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        entriesView.backgroundColor = UIColor.black.withAlphaComponent(0.12)
+        entriesView.textContainerInset = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+        entriesView.textContainer.lineFragmentPadding = 0
+        entriesView.layer.cornerRadius = 12
+        entriesView.isEditable = false
+        entriesView.isSelectable = true
+        entriesView.isScrollEnabled = true
+        entriesView.textColor = UIColor.white.withAlphaComponent(0.92)
+        entriesView.text = filesEntriesText(window.filesState)
+        entriesView.heightAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+
+        let previewLabel = UILabel()
+        previewLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        previewLabel.textColor = UIColor.white.withAlphaComponent(0.80)
+        previewLabel.numberOfLines = 0
+        previewLabel.text = filesPreviewText(window.filesState)
+
+        [pathLabel, metaLabel, entriesView, previewLabel].forEach(stack.addArrangedSubview)
         return stack
     }
 
@@ -363,6 +404,43 @@ final class DesktopRootViewController: UIViewController {
         }
 
         return "\(state.connectionTitle)\n\(state.columns) x \(state.rows) • \(state.statusMessage)"
+    }
+
+    private func filesPathText(_ state: PhaseZeroFilesState?) -> String {
+        guard let state else {
+            return "Workspace unavailable"
+        }
+
+        return "Workspace: \(state.workspaceName)\nPath: \(state.currentPath)"
+    }
+
+    private func filesMetaText(_ state: PhaseZeroFilesState?) -> String {
+        guard let state else {
+            return "No files runtime yet."
+        }
+
+        let selected = state.selectedEntry?.name ?? "none"
+        return "Items: \(state.entries.count)\nSelected: \(selected)\n\(state.statusMessage)"
+    }
+
+    private func filesEntriesText(_ state: PhaseZeroFilesState?) -> String {
+        guard let state else {
+            return "No files screen yet."
+        }
+
+        if state.entries.isEmpty {
+            return "Folder is empty."
+        }
+
+        return state.entries.prefix(12).map { entry in
+            let prefix = entry.kind == .directory ? "[DIR]" : "[FILE]"
+            let marker = entry.id == state.selectedEntryID ? ">" : " "
+            return "\(marker) \(prefix) \(entry.name)"
+        }.joined(separator: "\n")
+    }
+
+    private func filesPreviewText(_ state: PhaseZeroFilesState?) -> String {
+        state?.previewText ?? "No preview available."
     }
 
     private func terminalAttributedPreview(

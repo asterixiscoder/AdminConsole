@@ -3,6 +3,7 @@ import CoreGraphics
 import DesktopCompositor
 import DesktopDomain
 import DesktopStore
+import FilesFeature
 import Foundation
 import InputKit
 import PersistenceKit
@@ -53,6 +54,8 @@ public typealias PhaseZeroTerminalColor = TerminalColor
 public typealias PhaseZeroTerminalTextStyle = TerminalTextStyle
 public typealias PhaseZeroTerminalGridPoint = TerminalGridPoint
 public typealias PhaseZeroTerminalSelection = TerminalSelection
+public typealias PhaseZeroFilesState = FilesSurfaceState
+public typealias PhaseZeroFilesEntry = FilesEntry
 
 public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
     public var host: String
@@ -281,6 +284,96 @@ public actor PhaseZeroCoordinator {
         return await runtime.selectedText()
     }
 
+    public func selectFocusedFilesEntry(id: String) async {
+        guard let windowID = await targetFilesWindowID(),
+              let runtime = await filesRuntime(for: windowID) else {
+            await registerControlInput("Files selection skipped: no focused files window")
+            return
+        }
+
+        await runtime.selectEntry(id: id)
+    }
+
+    public func openSelectedFilesEntry() async {
+        guard let windowID = await targetFilesWindowID(),
+              let runtime = await filesRuntime(for: windowID) else {
+            await registerControlInput("Files open skipped: no focused files window")
+            return
+        }
+
+        await runtime.openSelectedEntry()
+    }
+
+    public func navigateUpInFocusedFiles() async {
+        guard let windowID = await targetFilesWindowID(),
+              let runtime = await filesRuntime(for: windowID) else {
+            await registerControlInput("Files up skipped: no focused files window")
+            return
+        }
+
+        await runtime.navigateUp()
+    }
+
+    public func refreshFocusedFiles() async {
+        guard let windowID = await targetFilesWindowID(),
+              let runtime = await filesRuntime(for: windowID) else {
+            await registerControlInput("Files refresh skipped: no focused files window")
+            return
+        }
+
+        await runtime.refresh()
+    }
+
+    public func createFolderInFocusedFiles(named name: String) async {
+        guard let windowID = await targetFilesWindowID(),
+              let runtime = await filesRuntime(for: windowID) else {
+            await registerControlInput("Files create folder skipped: no focused files window")
+            return
+        }
+
+        await runtime.createFolder(named: name)
+    }
+
+    public func renameSelectedFilesEntry(to name: String) async {
+        guard let windowID = await targetFilesWindowID(),
+              let runtime = await filesRuntime(for: windowID) else {
+            await registerControlInput("Files rename skipped: no focused files window")
+            return
+        }
+
+        await runtime.renameSelectedEntry(to: name)
+    }
+
+    public func deleteSelectedFilesEntry() async {
+        guard let windowID = await targetFilesWindowID(),
+              let runtime = await filesRuntime(for: windowID) else {
+            await registerControlInput("Files delete skipped: no focused files window")
+            return
+        }
+
+        await runtime.deleteSelectedEntry()
+    }
+
+    public func importIntoFocusedFiles(from urls: [URL]) async {
+        guard let windowID = await targetFilesWindowID(),
+              let runtime = await filesRuntime(for: windowID) else {
+            await registerControlInput("Files import skipped: no focused files window")
+            return
+        }
+
+        await runtime.importItems(from: urls)
+    }
+
+    public func exportURLForSelectedFilesEntry() async -> URL? {
+        guard let windowID = await targetFilesWindowID(),
+              let runtime = await filesRuntime(for: windowID) else {
+            await registerControlInput("Files export skipped: no focused files window")
+            return nil
+        }
+
+        return await runtime.exportSelectedEntryURL()
+    }
+
     private func runtimeKind(for kind: PhaseZeroWindowKind) -> RuntimeHandle.Kind {
         switch kind {
         case .terminal:
@@ -308,7 +401,13 @@ public actor PhaseZeroCoordinator {
                         )
                     )
                 }
-            case .files, .browser, .vnc:
+            case .files:
+                if await bootstrap.runtimes.filesRuntime(for: window.id) == nil {
+                    let runtime = makeFilesRuntime(windowID: window.id)
+                    _ = await bootstrap.runtimes.registerFiles(runtime, for: window.id)
+                    await runtime.start()
+                }
+            case .browser, .vnc:
                 if await bootstrap.runtimes.handle(for: window.id) == nil {
                     _ = await bootstrap.runtimes.register(kind: runtimeKind(for: window.kind), for: window.id)
                 }
@@ -337,9 +436,37 @@ public actor PhaseZeroCoordinator {
         return runtime
     }
 
+    private func targetFilesWindowID() async -> WindowID? {
+        let snapshot = await bootstrap.store.currentSnapshot()
+
+        if let focusedWindowID = snapshot.focusedWindowID,
+           snapshot.windows.contains(where: { $0.id == focusedWindowID && $0.kind == .files }) {
+            return focusedWindowID
+        }
+
+        return snapshot.windows.last(where: { $0.kind == .files })?.id
+    }
+
+    private func filesRuntime(for windowID: WindowID) async -> FilesWorkspaceRuntime? {
+        if let runtime = await bootstrap.runtimes.filesRuntime(for: windowID) {
+            return runtime
+        }
+
+        let runtime = makeFilesRuntime(windowID: windowID)
+        _ = await bootstrap.runtimes.registerFiles(runtime, for: windowID)
+        await runtime.start()
+        return runtime
+    }
+
     private func makeTerminalRuntime(windowID: WindowID) -> SSHTerminalRuntime {
         SSHTerminalRuntime(windowID: windowID, hostKeyTrustStore: bootstrap.sshHostKeyTrustStore) { [store = bootstrap.store] surface in
             _ = await store.dispatch(.updateTerminalSurface(windowID: windowID, surface: surface))
+        }
+    }
+
+    private func makeFilesRuntime(windowID: WindowID) -> FilesWorkspaceRuntime {
+        FilesWorkspaceRuntime(windowID: windowID) { [store = bootstrap.store] surface in
+            _ = await store.dispatch(.updateFilesSurface(windowID: windowID, surface: surface))
         }
     }
 

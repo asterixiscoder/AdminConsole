@@ -8,6 +8,7 @@ public enum DesktopAction: Equatable, Sendable {
     case focusWindow(WindowID)
     case closeWindow(WindowID)
     case updateTerminalSurface(windowID: WindowID, surface: TerminalSurfaceState)
+    case updateFilesSurface(windowID: WindowID, surface: FilesSurfaceState)
     case updateDisplayProfile(DisplayProfile)
     case setExternalDisplayConnected(Bool)
     case moveCursor(deltaX: Double, deltaY: Double)
@@ -97,6 +98,17 @@ public actor DesktopStore {
                 updated.title = surface.displayTitle
                 return updated
             }
+        case let .updateFilesSurface(windowID, surface):
+            next.windows = next.windows.map { item in
+                guard item.id == windowID, item.kind == .files else {
+                    return item
+                }
+
+                var updated = item
+                updated.filesState = surface
+                updated.title = surface.displayTitle
+                return updated
+            }
         case let .updateDisplayProfile(profile):
             next.displayProfile = profile
             next.windows = next.windows.map { item in
@@ -143,7 +155,8 @@ public actor DesktopStore {
             title: defaultTitle(for: kind),
             frame: WindowManager.defaultFrame(for: kind, index: index),
             isFocused: isFocused,
-            terminalState: kind == .terminal ? .idle(title: defaultTitle(for: kind)) : nil
+            terminalState: kind == .terminal ? .idle(title: defaultTitle(for: kind)) : nil,
+            filesState: kind == .files ? .idle(workspaceName: defaultTitle(for: kind)) : nil
         )
     }
 
