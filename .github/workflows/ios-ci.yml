@@ -17,6 +17,13 @@ concurrency:
   group: ios-ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  HOME: /tmp/adminconsole-home
+  CFFIXED_USER_HOME: /tmp/adminconsole-home
+  XDG_CACHE_HOME: /tmp/adminconsole-xdg
+  CLANG_MODULE_CACHE_PATH: /tmp/adminconsole-clang-cache
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   package-tests:
     name: Swift Package Tests
@@ -24,10 +31,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Prepare Build Environment
+        run: |
+          mkdir -p "$HOME"
+          mkdir -p "$XDG_CACHE_HOME"
+          mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
       - name: Xcode Version
         run: xcodebuild -version
+
+      - name: Resolve Swift Package Dependencies
+        working-directory: Packages/AppModules
+        run: swift package resolve --disable-sandbox
 
       - name: Run Swift Package Tests
         working-directory: Packages/AppModules
@@ -39,7 +56,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Prepare Build Environment
+        run: |
+          mkdir -p "$HOME"
+          mkdir -p "$XDG_CACHE_HOME"
+          mkdir -p "$CLANG_MODULE_CACHE_PATH"
 
       - name: Xcode Version
         run: xcodebuild -version
@@ -52,4 +75,6 @@ jobs:
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath /tmp/AdminConsoleDerivedData \
-            build CODE_SIGNING_ALLOWED=NO
+            build \
+            CODE_SIGNING_ALLOWED=NO \
+            CLANG_MODULE_CACHE_PATH="$CLANG_MODULE_CACHE_PATH"
