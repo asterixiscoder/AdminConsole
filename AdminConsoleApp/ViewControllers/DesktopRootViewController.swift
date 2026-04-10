@@ -503,7 +503,8 @@ final class DesktopRootViewController: UIViewController {
         }
 
         let events = state.recentEvents.suffix(3).joined(separator: " | ")
-        return "\(state.connectionTitle)\nQuality: \(state.qualityPreset) • Trackpad: \(state.isTrackpadModeEnabled ? "on" : "off")\n\(state.statusMessage)\n\(events)"
+        let clipboardState = state.remoteClipboardText?.isEmpty == false ? "available" : "empty"
+        return "\(state.connectionTitle)\nQuality: \(state.qualityPreset) • Trackpad: \(state.isTrackpadModeEnabled ? "on" : "off") • Bells: \(state.bellCount)\nClipboard: \(clipboardState)\n\(state.statusMessage)\n\(events)"
     }
 
     private func vncFramebufferImage(_ state: PhaseZeroVNCState?) -> UIImage? {

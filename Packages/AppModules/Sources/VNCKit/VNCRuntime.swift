@@ -47,12 +47,24 @@ public actor VNCRuntime {
         )
         await publish()
 
-        let client = RFBClient(configuration: configuration) { [weak self] snapshot in
+        let client = RFBClient(configuration: configuration) { [weak self] (snapshot: RFBFramebufferSnapshot) in
             guard let self else {
                 return
             }
 
             await self.handleFramebuffer(snapshot)
+        } onServerCutText: { [weak self] (text: String) in
+            guard let self else {
+                return
+            }
+
+            await self.handleServerClipboard(text)
+        } onBell: { [weak self] in
+            guard let self else {
+                return
+            }
+
+            await self.handleBell()
         }
         self.client = client
 
@@ -154,6 +166,21 @@ public actor VNCRuntime {
         }
     }
 
+    public func sendClipboard(text: String) async {
+        guard surface.sessionState == .connected else {
+            return
+        }
+
+        do {
+            try await client?.sendClipboardText(text)
+            surface.statusMessage = "Clipboard sent to remote desktop"
+            surface.appendEvent("Clipboard -> remote (\(min(text.count, 32)) chars)")
+            await publish()
+        } catch {
+            await presentTransportFailure(error)
+        }
+    }
+
     public func cycleQualityPreset() async {
         let next: VNCQualityPreset
         switch configuration?.qualityPreset ?? .balanced {
@@ -189,6 +216,20 @@ public actor VNCRuntime {
 
         apply(snapshot: snapshot)
         surface.statusMessage = "Framebuffer updated"
+        await publish()
+    }
+
+    private func handleServerClipboard(_ text: String) async {
+        surface.remoteClipboardText = text
+        surface.statusMessage = "Remote clipboard updated"
+        surface.appendEvent("Clipboard <- remote (\(min(text.count, 32)) chars)")
+        await publish()
+    }
+
+    private func handleBell() async {
+        surface.bellCount += 1
+        surface.statusMessage = "Remote bell received"
+        surface.appendEvent("Bell #\(surface.bellCount)")
         await publish()
     }
 
@@ -242,6 +283,11 @@ public actor VNCRuntime {
 
         lines.append("")
         lines.append(contentsOf: surface.recentEvents.suffix(4).map { " - \($0)" })
+        if let remoteClipboardText = surface.remoteClipboardText,
+           !remoteClipboardText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append("")
+            lines.append("Clipboard: \(String(remoteClipboardText.prefix(48)))")
+        }
         return lines
     }
 

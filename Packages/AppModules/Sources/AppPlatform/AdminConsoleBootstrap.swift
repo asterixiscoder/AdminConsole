@@ -475,6 +475,26 @@ public actor PhaseZeroCoordinator {
         await registerControlInput("VNC input: \(summary.prefix(24))")
     }
 
+    public func sendClipboardToFocusedVNC(_ text: String) async {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            await registerControlInput("VNC clipboard skipped: no focused VNC window")
+            return
+        }
+
+        await runtime.sendClipboard(text: text)
+        await registerControlInput("VNC clipboard -> remote")
+    }
+
+    public func remoteClipboardTextForFocusedVNC() async -> String? {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            return nil
+        }
+
+        return await runtime.snapshot().remoteClipboardText
+    }
+
     public func cycleQualityPresetForFocusedVNC() async {
         guard let windowID = await targetVNCWindowID(),
               let runtime = await vncRuntime(for: windowID) else {

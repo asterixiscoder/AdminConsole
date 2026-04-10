@@ -562,6 +562,23 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
         [sendButton, clickButton, qualityButton].forEach(buttons.addArrangedSubview)
 
+        let clipboardButtons = UIStackView()
+        clipboardButtons.axis = .horizontal
+        clipboardButtons.spacing = 8
+        clipboardButtons.distribution = .fillEqually
+
+        let pasteClipboardButton = UIButton(type: .system)
+        pasteClipboardButton.configuration = .plain()
+        pasteClipboardButton.configuration?.title = "Paste Clipboard"
+        pasteClipboardButton.addTarget(self, action: #selector(pasteClipboardToVNC), for: .touchUpInside)
+
+        let copyRemoteClipboardButton = UIButton(type: .system)
+        copyRemoteClipboardButton.configuration = .plain()
+        copyRemoteClipboardButton.configuration?.title = "Copy Remote Clipboard"
+        copyRemoteClipboardButton.addTarget(self, action: #selector(copyRemoteVNCClipboard), for: .touchUpInside)
+
+        [pasteClipboardButton, copyRemoteClipboardButton].forEach(clipboardButtons.addArrangedSubview)
+
         [
             titleLabel,
             vncStatusLabel,
@@ -574,6 +591,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             connectButton,
             vncInputField,
             buttons,
+            clipboardButtons,
             vncPreviewView
         ].forEach(stack.addArrangedSubview)
 
@@ -824,6 +842,37 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private func cycleVNCQuality() {
         Task {
             await AppEnvironment.phaseZero.cycleQualityPresetForFocusedVNC()
+        }
+    }
+
+    @objc
+    private func pasteClipboardToVNC() {
+        guard let clipboardText = UIPasteboard.general.string,
+              !clipboardText.isEmpty else {
+            Task {
+                await AppEnvironment.phaseZero.registerControlInput("VNC clipboard paste skipped: clipboard is empty")
+            }
+            return
+        }
+
+        Task {
+            await AppEnvironment.phaseZero.sendClipboardToFocusedVNC(clipboardText)
+        }
+    }
+
+    @objc
+    private func copyRemoteVNCClipboard() {
+        Task {
+            guard let text = await AppEnvironment.phaseZero.remoteClipboardTextForFocusedVNC(),
+                  !text.isEmpty else {
+                await AppEnvironment.phaseZero.registerControlInput("VNC clipboard copy skipped: remote clipboard is empty")
+                return
+            }
+
+            await MainActor.run {
+                UIPasteboard.general.string = text
+            }
+            await AppEnvironment.phaseZero.registerControlInput("VNC clipboard <- remote")
         }
     }
 
@@ -1157,6 +1206,8 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         Status: \(vncState.statusMessage)
         Quality: \(vncState.qualityPreset)
         Pointer: x \(String(format: "%.2f", vncState.remotePointer.x)), y \(String(format: "%.2f", vncState.remotePointer.y))
+        Bells: \(vncState.bellCount)
+        Remote Clipboard: \((vncState.remoteClipboardText?.isEmpty == false) ? "available" : "empty")
         """
     }
 

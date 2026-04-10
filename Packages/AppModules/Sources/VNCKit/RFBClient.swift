@@ -66,6 +66,8 @@ public actor RFBClient {
     private let configuration: VNCSessionConfiguration
     private let queue: DispatchQueue
     private let onFramebufferUpdate: @Sendable (RFBFramebufferSnapshot) async -> Void
+    private let onServerCutText: (@Sendable (String) async -> Void)?
+    private let onBell: (@Sendable () async -> Void)?
 
     private var connection: NWConnection?
     private var receiveBuffer = Data()
@@ -78,10 +80,14 @@ public actor RFBClient {
 
     public init(
         configuration: VNCSessionConfiguration,
-        onFramebufferUpdate: @escaping @Sendable (RFBFramebufferSnapshot) async -> Void
+        onFramebufferUpdate: @escaping @Sendable (RFBFramebufferSnapshot) async -> Void,
+        onServerCutText: (@Sendable (String) async -> Void)? = nil,
+        onBell: (@Sendable () async -> Void)? = nil
     ) {
         self.configuration = configuration
         self.onFramebufferUpdate = onFramebufferUpdate
+        self.onServerCutText = onServerCutText
+        self.onBell = onBell
         self.queue = DispatchQueue(label: "AdminConsole.RFBClient.\(configuration.connection.host).\(configuration.connection.port)")
     }
 
@@ -149,6 +155,14 @@ public actor RFBClient {
             try await sendKeyEvent(isDown: true, keySymbol: keySymbol)
             try await sendKeyEvent(isDown: false, keySymbol: keySymbol)
         }
+    }
+
+    public func sendClipboardText(_ text: String) async throws {
+        var data = Data([6, 0, 0, 0])
+        let payload = Data(text.utf8)
+        data.appendUInt32(UInt32(payload.count))
+        data.append(payload)
+        try await send(data)
     }
 
     public func updateQualityPreset(_ preset: VNCQualityPreset) async throws {
@@ -334,12 +348,18 @@ public actor RFBClient {
                     try await handleFramebufferUpdate()
                     try await requestFramebufferUpdate(incremental: true)
                 case 2:
+                    if let onBell {
+                        await onBell()
+                    }
                     continue
                 case 3:
                     _ = try await receiveUInt8()
                     _ = try await receiveUInt16()
                     let byteCount = Int(try await receiveUInt32())
-                    _ = try await receiveExact(count: byteCount)
+                    let text = try await receiveString(count: byteCount)
+                    if let onServerCutText {
+                        await onServerCutText(text)
+                    }
                 default:
                     throw RFBClientError.invalidServerMessage(messageType)
                 }
