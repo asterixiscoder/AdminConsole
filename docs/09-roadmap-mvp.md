@@ -94,7 +94,8 @@ Deliverables:
 
 - terminal window
 - SSH session management
-- host key storage
+- host key validation and known host persistence
+- Keychain-backed SSH credential reuse
 - reconnect logic
 - copy and paste
 - terminal resize behavior
@@ -220,4 +221,3 @@ The MVP can be considered release-ready when:
 4. VNC meets minimum interaction quality.
 5. Browser support is either stable or formally deferred from MVP.
 6. Keyboard and pointer handling are reliable enough for sustained sessions.
-

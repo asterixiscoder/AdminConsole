@@ -120,7 +120,8 @@ Responsibilities:
 Responsibilities:
 
 - Keychain access
-- host key storage
+- SSH credential storage
+- known hosts storage with trust-on-first-use validation
 - secure credential references
 - clipboard and secret redaction policy
 
@@ -178,4 +179,3 @@ Responsibilities:
 3. Networking transport stays behind feature-neutral protocols.
 4. View instances never enter `DesktopStore`.
 5. Runtimes should be accessed via identifiers and interfaces, not by global singletons.
-

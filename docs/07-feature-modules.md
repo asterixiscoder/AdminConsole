@@ -36,7 +36,8 @@ Each module should own its UI and runtime integration, but must follow the same 
 - one SSH-backed terminal window
 - reconnect and resize support
 - standard copy and paste
-- host key validation
+- host key validation with trust-on-first-use
+- Keychain-backed password reuse for repeated SSH connections
 
 ## Files Module
 
@@ -118,4 +119,3 @@ VNC library selection must remain flexible until performance, licensing, and iOS
 3. Every feature must participate in clipboard policy.
 4. Every feature must report user-visible failures in a consistent way.
 5. Every feature must tolerate scene recreation without corrupting core state.
-

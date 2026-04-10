@@ -129,11 +129,13 @@ Mitigation:
 
 - secrets must live in Keychain
 - store references, not raw secrets, in normal persistence
+- current MVP path stores SSH passwords in Keychain after a successful connection
 
 ### SSH Trust Model
 
 - host keys must be verified and persisted
 - trust-on-first-use is acceptable for MVP if clearly surfaced
+- current SSH runtime rejects host key mismatch after first successful trust
 
 ### Clipboard Policy
 
@@ -155,4 +157,3 @@ The following gates should be resolved before full implementation begins:
 2. VNC adapter candidate selection
 3. acceptable rendering budget on 1440p and 4K displays
 4. keyboard routing stability across terminal, browser, and VNC
-
