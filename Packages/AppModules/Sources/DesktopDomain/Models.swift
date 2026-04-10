@@ -38,6 +38,13 @@ public enum TerminalConnectionState: String, Codable, CaseIterable, Sendable {
     case failed
 }
 
+public enum VNCConnectionState: String, Codable, CaseIterable, Sendable {
+    case idle
+    case connecting
+    case connected
+    case failed
+}
+
 public struct TerminalCursorState: Codable, Equatable, Sendable {
     public var row: Int
     public var column: Int
@@ -537,6 +544,99 @@ public struct FilesSurfaceState: Codable, Equatable, Sendable {
     }
 }
 
+public struct VNCFrameSnapshot: Codable, Equatable, Sendable {
+    public var columns: Int
+    public var rows: Int
+    public var lines: [String]
+
+    public init(columns: Int = 72, rows: Int = 20, lines: [String] = []) {
+        self.columns = max(1, columns)
+        self.rows = max(1, rows)
+        let normalizedLines = Array(lines.prefix(self.rows))
+        self.lines = normalizedLines + Array(repeating: "", count: max(0, self.rows - normalizedLines.count))
+    }
+
+    public static func placeholder(
+        columns: Int = 72,
+        rows: Int = 20,
+        title: String = "VNC spike",
+        detail: String = "Connect from the iPhone control scene to start a remote desktop session."
+    ) -> VNCFrameSnapshot {
+        VNCFrameSnapshot(
+            columns: columns,
+            rows: rows,
+            lines: [
+                "+" + String(repeating: "-", count: max(1, columns - 2)) + "+",
+                "| " + title.padding(toLength: max(1, columns - 4), withPad: " ", startingAt: 0) + " |",
+                "| " + detail.padding(toLength: max(1, columns - 4), withPad: " ", startingAt: 0) + " |",
+                "+" + String(repeating: "-", count: max(1, columns - 2)) + "+"
+            ]
+        )
+    }
+
+    public var renderedText: String {
+        lines.joined(separator: "\n")
+    }
+}
+
+public struct VNCSurfaceState: Codable, Equatable, Sendable {
+    public static let maximumEventLogCount = 10
+
+    public var connectionTitle: String
+    public var sessionState: VNCConnectionState
+    public var statusMessage: String
+    public var frame: VNCFrameSnapshot
+    public var remoteDesktopName: String
+    public var qualityPreset: String
+    public var isTrackpadModeEnabled: Bool
+    public var remotePointer: CursorState
+    public var recentEvents: [String]
+
+    public init(
+        connectionTitle: String = "VNC",
+        sessionState: VNCConnectionState = .idle,
+        statusMessage: String = "Ready for VNC session",
+        frame: VNCFrameSnapshot = .placeholder(),
+        remoteDesktopName: String = "Remote Desktop",
+        qualityPreset: String = "balanced",
+        isTrackpadModeEnabled: Bool = true,
+        remotePointer: CursorState = CursorState(x: 0.32, y: 0.40),
+        recentEvents: [String] = []
+    ) {
+        self.connectionTitle = connectionTitle
+        self.sessionState = sessionState
+        self.statusMessage = statusMessage
+        self.frame = frame
+        self.remoteDesktopName = remoteDesktopName
+        self.qualityPreset = qualityPreset
+        self.isTrackpadModeEnabled = isTrackpadModeEnabled
+        self.remotePointer = remotePointer
+        self.recentEvents = Array(recentEvents.suffix(Self.maximumEventLogCount))
+    }
+
+    public static func idle(title: String = "VNC") -> VNCSurfaceState {
+        VNCSurfaceState(
+            connectionTitle: title,
+            sessionState: .idle,
+            statusMessage: "Ready for VNC session",
+            frame: .placeholder(title: "VNC spike", detail: "Use the iPhone control scene to connect and drive the remote desktop.")
+        )
+    }
+
+    public var displayTitle: String {
+        if remoteDesktopName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return connectionTitle
+        }
+
+        return remoteDesktopName
+    }
+
+    public mutating func appendEvent(_ event: String) {
+        recentEvents.append(event)
+        recentEvents = Array(recentEvents.suffix(Self.maximumEventLogCount))
+    }
+}
+
 public struct NormalizedRect: Codable, Equatable, Sendable {
     public var x: Double
     public var y: Double
@@ -561,6 +661,7 @@ public struct DesktopWindow: Identifiable, Codable, Equatable, Sendable {
     public var isFocused: Bool
     public var terminalState: TerminalSurfaceState?
     public var filesState: FilesSurfaceState?
+    public var vncState: VNCSurfaceState?
 
     public init(
         id: WindowID = WindowID(),
@@ -569,7 +670,8 @@ public struct DesktopWindow: Identifiable, Codable, Equatable, Sendable {
         frame: NormalizedRect = .defaultWindow,
         isFocused: Bool = false,
         terminalState: TerminalSurfaceState? = nil,
-        filesState: FilesSurfaceState? = nil
+        filesState: FilesSurfaceState? = nil,
+        vncState: VNCSurfaceState? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -578,6 +680,7 @@ public struct DesktopWindow: Identifiable, Codable, Equatable, Sendable {
         self.isFocused = isFocused
         self.terminalState = terminalState
         self.filesState = filesState
+        self.vncState = vncState
     }
 }
 

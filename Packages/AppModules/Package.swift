@@ -45,6 +45,7 @@ let package = Package(
                 "ConnectionKit",
                 "FilesFeature",
                 "SSHKit",
+                "VNCKit",
                 "PersistenceKit",
                 "SecurityKit",
                 "TelemetryKit"
@@ -63,7 +64,8 @@ let package = Package(
             dependencies: [
                 "DesktopDomain",
                 "FilesFeature",
-                "SSHKit"
+                "SSHKit",
+                "VNCKit"
             ]
         ),
         .target(
@@ -173,6 +175,14 @@ let package = Package(
             dependencies: [
                 "DesktopDomain",
                 "DesktopStore"
+            ]
+        ),
+        .testTarget(
+            name: "VNCKitTests",
+            dependencies: [
+                "DesktopDomain",
+                "ConnectionKit",
+                "VNCKit"
             ]
         )
     ]

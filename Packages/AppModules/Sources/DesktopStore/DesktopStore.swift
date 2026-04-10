@@ -9,6 +9,7 @@ public enum DesktopAction: Equatable, Sendable {
     case closeWindow(WindowID)
     case updateTerminalSurface(windowID: WindowID, surface: TerminalSurfaceState)
     case updateFilesSurface(windowID: WindowID, surface: FilesSurfaceState)
+    case updateVNCSurface(windowID: WindowID, surface: VNCSurfaceState)
     case updateDisplayProfile(DisplayProfile)
     case setExternalDisplayConnected(Bool)
     case moveCursor(deltaX: Double, deltaY: Double)
@@ -109,6 +110,17 @@ public actor DesktopStore {
                 updated.title = surface.displayTitle
                 return updated
             }
+        case let .updateVNCSurface(windowID, surface):
+            next.windows = next.windows.map { item in
+                guard item.id == windowID, item.kind == .vnc else {
+                    return item
+                }
+
+                var updated = item
+                updated.vncState = surface
+                updated.title = surface.displayTitle
+                return updated
+            }
         case let .updateDisplayProfile(profile):
             next.displayProfile = profile
             next.windows = next.windows.map { item in
@@ -156,7 +168,8 @@ public actor DesktopStore {
             frame: WindowManager.defaultFrame(for: kind, index: index),
             isFocused: isFocused,
             terminalState: kind == .terminal ? .idle(title: defaultTitle(for: kind)) : nil,
-            filesState: kind == .files ? .idle(workspaceName: defaultTitle(for: kind)) : nil
+            filesState: kind == .files ? .idle(workspaceName: defaultTitle(for: kind)) : nil,
+            vncState: kind == .vnc ? .idle(title: defaultTitle(for: kind)) : nil
         )
     }
 

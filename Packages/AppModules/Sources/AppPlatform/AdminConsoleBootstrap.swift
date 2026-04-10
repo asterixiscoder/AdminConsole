@@ -11,6 +11,7 @@ import RuntimeRegistry
 import SecurityKit
 import SSHKit
 import TelemetryKit
+import VNCKit
 import WindowManager
 
 public struct AdminConsoleBootstrap: Sendable {
@@ -56,6 +57,8 @@ public typealias PhaseZeroTerminalGridPoint = TerminalGridPoint
 public typealias PhaseZeroTerminalSelection = TerminalSelection
 public typealias PhaseZeroFilesState = FilesSurfaceState
 public typealias PhaseZeroFilesEntry = FilesEntry
+public typealias PhaseZeroVNCState = VNCSurfaceState
+public typealias PhaseZeroVNCQualityPreset = VNCQualityPreset
 
 public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
     public var host: String
@@ -115,6 +118,46 @@ public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
                 pixelWidth: pixelWidth,
                 pixelHeight: pixelHeight
             )
+        )
+    }
+}
+
+public struct PhaseZeroVNCConnectionRequest: Sendable, Equatable {
+    public var host: String
+    public var port: Int
+    public var password: String
+    public var qualityPreset: VNCQualityPreset
+    public var isTrackpadModeEnabled: Bool
+
+    public init(
+        host: String,
+        port: Int = 5900,
+        password: String = "",
+        qualityPreset: VNCQualityPreset = .balanced,
+        isTrackpadModeEnabled: Bool = true
+    ) {
+        self.host = host
+        self.port = port
+        self.password = password
+        self.qualityPreset = qualityPreset
+        self.isTrackpadModeEnabled = isTrackpadModeEnabled
+    }
+
+    public var connectionSummary: String {
+        "vnc://\(host):\(port)"
+    }
+
+    public func runtimeConfiguration() -> VNCSessionConfiguration {
+        VNCSessionConfiguration(
+            connection: ConnectionDescriptor(
+                kind: .vnc,
+                host: host,
+                port: port,
+                displayName: host
+            ),
+            password: password,
+            qualityPreset: qualityPreset,
+            isTrackpadModeEnabled: isTrackpadModeEnabled
         )
     }
 }
@@ -374,6 +417,75 @@ public actor PhaseZeroCoordinator {
         return await runtime.exportSelectedEntryURL()
     }
 
+    public func connectFocusedVNC(using request: PhaseZeroVNCConnectionRequest) async {
+        guard !request.host.isEmpty else {
+            await registerControlInput("VNC connect skipped: host missing")
+            return
+        }
+
+        let windowID: WindowID
+
+        if let focusedVNC = await targetVNCWindowID() {
+            windowID = focusedVNC
+        } else if let opened = await openWindow(.vnc) {
+            windowID = opened
+        } else {
+            await registerControlInput("VNC connect failed: unable to create VNC window")
+            return
+        }
+
+        guard let runtime = await vncRuntime(for: windowID) else {
+            await registerControlInput("VNC connect failed: runtime unavailable")
+            return
+        }
+
+        await focusWindow(windowID)
+        await registerControlInput("VNC connect: \(request.connectionSummary)")
+        _ = await runtime.connect(using: request.runtimeConfiguration())
+    }
+
+    public func movePointerInFocusedVNC(deltaX: Double, deltaY: Double) async {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            return
+        }
+
+        await runtime.movePointer(deltaX: deltaX, deltaY: deltaY)
+    }
+
+    public func clickFocusedVNC() async {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            await registerControlInput("VNC click skipped: no focused VNC window")
+            return
+        }
+
+        await runtime.click()
+    }
+
+    public func sendInputToFocusedVNC(_ text: String) async {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            await registerControlInput("VNC input skipped: no focused VNC window")
+            return
+        }
+
+        await runtime.send(text: text)
+        let summary = text.replacingOccurrences(of: "\n", with: "\\n")
+        await registerControlInput("VNC input: \(summary.prefix(24))")
+    }
+
+    public func cycleQualityPresetForFocusedVNC() async {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            await registerControlInput("VNC quality skipped: no focused VNC window")
+            return
+        }
+
+        await runtime.cycleQualityPreset()
+        await registerControlInput("VNC quality preset changed")
+    }
+
     private func runtimeKind(for kind: PhaseZeroWindowKind) -> RuntimeHandle.Kind {
         switch kind {
         case .terminal:
@@ -407,7 +519,18 @@ public actor PhaseZeroCoordinator {
                     _ = await bootstrap.runtimes.registerFiles(runtime, for: window.id)
                     await runtime.start()
                 }
-            case .browser, .vnc:
+            case .vnc:
+                if await bootstrap.runtimes.vncRuntime(for: window.id) == nil {
+                    let runtime = makeVNCRuntime(windowID: window.id)
+                    _ = await bootstrap.runtimes.registerVNC(runtime, for: window.id)
+                    _ = await bootstrap.store.dispatch(
+                        .updateVNCSurface(
+                            windowID: window.id,
+                            surface: await runtime.snapshot()
+                        )
+                    )
+                }
+            case .browser:
                 if await bootstrap.runtimes.handle(for: window.id) == nil {
                     _ = await bootstrap.runtimes.register(kind: runtimeKind(for: window.kind), for: window.id)
                 }
@@ -458,6 +581,27 @@ public actor PhaseZeroCoordinator {
         return runtime
     }
 
+    private func targetVNCWindowID() async -> WindowID? {
+        let snapshot = await bootstrap.store.currentSnapshot()
+
+        if let focusedWindowID = snapshot.focusedWindowID,
+           snapshot.windows.contains(where: { $0.id == focusedWindowID && $0.kind == .vnc }) {
+            return focusedWindowID
+        }
+
+        return snapshot.windows.last(where: { $0.kind == .vnc })?.id
+    }
+
+    private func vncRuntime(for windowID: WindowID) async -> VNCRuntime? {
+        if let runtime = await bootstrap.runtimes.vncRuntime(for: windowID) {
+            return runtime
+        }
+
+        let runtime = makeVNCRuntime(windowID: windowID)
+        _ = await bootstrap.runtimes.registerVNC(runtime, for: windowID)
+        return runtime
+    }
+
     private func makeTerminalRuntime(windowID: WindowID) -> SSHTerminalRuntime {
         SSHTerminalRuntime(windowID: windowID, hostKeyTrustStore: bootstrap.sshHostKeyTrustStore) { [store = bootstrap.store] surface in
             _ = await store.dispatch(.updateTerminalSurface(windowID: windowID, surface: surface))
@@ -467,6 +611,12 @@ public actor PhaseZeroCoordinator {
     private func makeFilesRuntime(windowID: WindowID) -> FilesWorkspaceRuntime {
         FilesWorkspaceRuntime(windowID: windowID) { [store = bootstrap.store] surface in
             _ = await store.dispatch(.updateFilesSurface(windowID: windowID, surface: surface))
+        }
+    }
+
+    private func makeVNCRuntime(windowID: WindowID) -> VNCRuntime {
+        VNCRuntime(windowID: windowID) { [store = bootstrap.store] surface in
+            _ = await store.dispatch(.updateVNCSurface(windowID: windowID, surface: surface))
         }
     }
 

@@ -241,6 +241,10 @@ final class DesktopRootViewController: UIViewController {
             return "\(filesState.currentPath) • \(filesState.statusMessage)"
         }
 
+        if let vncState = window.vncState {
+            return "\(vncState.connectionTitle) • \(vncState.statusMessage)"
+        }
+
         return window.id.rawValue.uuidString.prefix(8) + " • " + snapshot.lastInputDescription
     }
 
@@ -256,10 +260,7 @@ final class DesktopRootViewController: UIViewController {
                 detail: "The web module remains hosted in-app. The next step is promoting the Browser spike into a managed desktop window."
             )
         case .vnc:
-            return makePlaceholderContent(
-                title: "VNC bridge placeholder",
-                detail: "VNC rendering will reuse the same desktop compositor and input routing path as the SSH terminal."
-            )
+            return makeVNCContent(window: window)
         }
     }
 
@@ -343,6 +344,39 @@ final class DesktopRootViewController: UIViewController {
         return stack
     }
 
+    private func makeVNCContent(window: PhaseZeroWindow) -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 10
+
+        let badgeLabel = UILabel()
+        badgeLabel.font = .preferredFont(forTextStyle: .caption1)
+        badgeLabel.textColor = vncBadgeColor(for: window.vncState)
+        badgeLabel.text = vncBadgeTitle(for: window.vncState)
+
+        let metaLabel = UILabel()
+        metaLabel.font = .preferredFont(forTextStyle: .footnote)
+        metaLabel.textColor = UIColor.white.withAlphaComponent(0.74)
+        metaLabel.numberOfLines = 0
+        metaLabel.text = vncMetaText(window.vncState)
+
+        let framebufferView = UITextView()
+        framebufferView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        framebufferView.backgroundColor = UIColor.black.withAlphaComponent(0.12)
+        framebufferView.textContainerInset = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+        framebufferView.textContainer.lineFragmentPadding = 0
+        framebufferView.layer.cornerRadius = 12
+        framebufferView.isEditable = false
+        framebufferView.isSelectable = true
+        framebufferView.isScrollEnabled = true
+        framebufferView.textColor = UIColor.white.withAlphaComponent(0.92)
+        framebufferView.text = window.vncState?.frame.renderedText ?? "No VNC framebuffer yet."
+        framebufferView.heightAnchor.constraint(greaterThanOrEqualToConstant: 190).isActive = true
+
+        [badgeLabel, metaLabel, framebufferView].forEach(stack.addArrangedSubview)
+        return stack
+    }
+
     private func makePlaceholderContent(title: String, detail: String) -> UIView {
         let stack = UIStackView()
         stack.axis = .vertical
@@ -421,6 +455,45 @@ final class DesktopRootViewController: UIViewController {
 
         let selected = state.selectedEntry?.name ?? "none"
         return "Items: \(state.entries.count)\nSelected: \(selected)\n\(state.statusMessage)"
+    }
+
+    private func vncBadgeTitle(for state: PhaseZeroVNCState?) -> String {
+        switch state?.sessionState {
+        case .idle?:
+            return "Idle"
+        case .connecting?:
+            return "Connecting"
+        case .connected?:
+            return "Connected"
+        case .failed?:
+            return "Ended"
+        case nil:
+            return "Ready"
+        }
+    }
+
+    private func vncBadgeColor(for state: PhaseZeroVNCState?) -> UIColor {
+        switch state?.sessionState {
+        case .idle?:
+            return UIColor.white.withAlphaComponent(0.85)
+        case .connecting?:
+            return UIColor.systemOrange
+        case .connected?:
+            return UIColor.systemGreen
+        case .failed?:
+            return UIColor.systemRed
+        case nil:
+            return UIColor.white.withAlphaComponent(0.85)
+        }
+    }
+
+    private func vncMetaText(_ state: PhaseZeroVNCState?) -> String {
+        guard let state else {
+            return "Ready for VNC runtime."
+        }
+
+        let events = state.recentEvents.suffix(3).joined(separator: " | ")
+        return "\(state.connectionTitle)\nQuality: \(state.qualityPreset) • Trackpad: \(state.isTrackpadModeEnabled ? "on" : "off")\n\(state.statusMessage)\n\(events)"
     }
 
     private func filesEntriesText(_ state: PhaseZeroFilesState?) -> String {

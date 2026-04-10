@@ -15,6 +15,8 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private let terminalPreviewView = UITextView()
     private let filesStatusLabel = UILabel()
     private let filesPreviewView = UITextView()
+    private let vncStatusLabel = UILabel()
+    private let vncPreviewView = UITextView()
     private let filesEntriesStack = UIStackView()
     private let newFolderField = UITextField()
     private let renameEntryField = UITextField()
@@ -26,6 +28,12 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private let usernameField = UITextField()
     private let passwordField = UITextField()
     private let commandField = UITextField()
+    private let vncHostField = UITextField()
+    private let vncPortField = UITextField()
+    private let vncPasswordField = UITextField()
+    private let vncInputField = UITextField()
+    private let vncQualityControl = UISegmentedControl(items: ["Low", "Balanced", "High"])
+    private let vncTrackpadSwitch = UISwitch()
     private var updatesTask: Task<Void, Never>?
     private var latestSnapshot: PhaseZeroSnapshot?
     private var isAwaitingFilesExport = false
@@ -51,7 +59,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         summaryLabel.font = .preferredFont(forTextStyle: .title3)
         summaryLabel.numberOfLines = 0
 
-        [statusLabel, focusedLabel, cursorLabel, inputLabel, terminalStatusLabel, filesStatusLabel].forEach { label in
+        [statusLabel, focusedLabel, cursorLabel, inputLabel, terminalStatusLabel, filesStatusLabel, vncStatusLabel].forEach { label in
             label.font = .preferredFont(forTextStyle: .body)
             label.numberOfLines = 0
         }
@@ -78,6 +86,17 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         filesPreviewView.textContainer.lineFragmentPadding = 0
         filesPreviewView.heightAnchor.constraint(equalToConstant: 160).isActive = true
 
+        vncPreviewView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        vncPreviewView.textColor = .secondaryLabel
+        vncPreviewView.text = "No VNC window selected."
+        vncPreviewView.backgroundColor = .clear
+        vncPreviewView.isEditable = false
+        vncPreviewView.isSelectable = true
+        vncPreviewView.isScrollEnabled = true
+        vncPreviewView.textContainerInset = .zero
+        vncPreviewView.textContainer.lineFragmentPadding = 0
+        vncPreviewView.heightAnchor.constraint(equalToConstant: 180).isActive = true
+
         filesEntriesStack.axis = .vertical
         filesEntriesStack.spacing = 8
 
@@ -88,7 +107,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         Cmd+3 Browser
         Cmd+4 VNC
         Cmd+V Paste clipboard to terminal
-        Arrow keys move cursor unless terminal focus is active
+        Arrow keys move cursor unless terminal or VNC focus is active
         """
         keyboardHintLabel.font = .preferredFont(forTextStyle: .footnote)
         keyboardHintLabel.numberOfLines = 0
@@ -122,13 +141,14 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         let actionsCard = makeCard(arrangedSubviews: [makeButtonsRow()])
         let sshCard = makeCard(arrangedSubviews: [makeSSHControls()])
         let filesCard = makeCard(arrangedSubviews: [makeFilesControls()])
+        let vncCard = makeCard(arrangedSubviews: [makeVNCControls()])
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.axis = .vertical
         stackView.spacing = 18
 
-        [infoCard, trackpadCard, actionsCard, sshCard, filesCard].forEach(stackView.addArrangedSubview)
+        [infoCard, trackpadCard, actionsCard, sshCard, filesCard, vncCard].forEach(stackView.addArrangedSubview)
         scrollView.addSubview(stackView)
         view.addSubview(scrollView)
 
@@ -185,7 +205,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             makeKeyCommand("v", modifiers: .command, action: #selector(pasteClipboardToTerminal), title: "Paste Clipboard to Terminal")
         ]
 
-        if !routesHardwareKeyboardToTerminal {
+        if !routesHardwareKeyboardToTerminal && !routesHardwareKeyboardToVNC {
             commands.append(makeKeyCommand(UIKeyCommand.inputUpArrow, action: #selector(moveCursorUp), title: "Move Cursor Up"))
             commands.append(makeKeyCommand(UIKeyCommand.inputDownArrow, action: #selector(moveCursorDown), title: "Move Cursor Down"))
             commands.append(makeKeyCommand(UIKeyCommand.inputLeftArrow, action: #selector(moveCursorLeft), title: "Move Cursor Left"))
@@ -201,6 +221,14 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
                let terminalInput = terminalInput(for: key) {
                 Task {
                     await AppEnvironment.phaseZero.sendInputToFocusedTerminal(terminalInput)
+                }
+                return
+            }
+
+            if routesHardwareKeyboardToVNC,
+               let vncInput = terminalInput(for: key) {
+                Task {
+                    await AppEnvironment.phaseZero.sendInputToFocusedVNC(vncInput)
                 }
                 return
             }
@@ -252,6 +280,8 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         terminalPreviewView.text = terminalPreview(snapshot: snapshot)
         filesStatusLabel.text = filesStatusText(snapshot: snapshot)
         filesPreviewView.text = filesPreview(snapshot: snapshot)
+        vncStatusLabel.text = vncStatusText(snapshot: snapshot)
+        vncPreviewView.text = vncPreview(snapshot: snapshot)
         refreshFilesEntries(snapshot: snapshot)
 
         applyTrackpadCursor(snapshot: snapshot)
@@ -469,6 +499,87 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         return stack
     }
 
+    private func makeVNCControls() -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+
+        let titleLabel = UILabel()
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.numberOfLines = 0
+        titleLabel.text = "VNC Spike"
+
+        configureField(vncHostField, placeholder: "VNC host", textContentType: .URL)
+        configureField(vncPortField, placeholder: "VNC port", keyboardType: .numberPad)
+        vncPortField.text = "5900"
+        configureField(vncPasswordField, placeholder: "VNC password (optional)")
+        vncPasswordField.isSecureTextEntry = true
+        configureField(vncInputField, placeholder: "Text to send to focused VNC window")
+        vncInputField.returnKeyType = .send
+
+        let qualityLabel = UILabel()
+        qualityLabel.font = .preferredFont(forTextStyle: .footnote)
+        qualityLabel.textColor = .secondaryLabel
+        qualityLabel.text = "Quality preset"
+
+        vncQualityControl.selectedSegmentIndex = 1
+
+        let trackpadLabel = UILabel()
+        trackpadLabel.font = .preferredFont(forTextStyle: .footnote)
+        trackpadLabel.textColor = .secondaryLabel
+        trackpadLabel.text = "Trackpad mode"
+
+        let trackpadRow = UIStackView(arrangedSubviews: [trackpadLabel, vncTrackpadSwitch])
+        trackpadRow.axis = .horizontal
+        trackpadRow.alignment = .center
+        trackpadRow.distribution = .equalSpacing
+        vncTrackpadSwitch.isOn = true
+
+        let connectButton = UIButton(type: .system)
+        connectButton.configuration = .filled()
+        connectButton.configuration?.title = "Connect Focused VNC"
+        connectButton.addTarget(self, action: #selector(connectVNC), for: .touchUpInside)
+
+        let buttons = UIStackView()
+        buttons.axis = .horizontal
+        buttons.spacing = 8
+        buttons.distribution = .fillEqually
+
+        let sendButton = UIButton(type: .system)
+        sendButton.configuration = .tinted()
+        sendButton.configuration?.title = "Send Text"
+        sendButton.addTarget(self, action: #selector(sendTextToVNC), for: .touchUpInside)
+
+        let clickButton = UIButton(type: .system)
+        clickButton.configuration = .plain()
+        clickButton.configuration?.title = "Primary Click"
+        clickButton.addTarget(self, action: #selector(clickFocusedVNC), for: .touchUpInside)
+
+        let qualityButton = UIButton(type: .system)
+        qualityButton.configuration = .plain()
+        qualityButton.configuration?.title = "Cycle Quality"
+        qualityButton.addTarget(self, action: #selector(cycleVNCQuality), for: .touchUpInside)
+
+        [sendButton, clickButton, qualityButton].forEach(buttons.addArrangedSubview)
+
+        [
+            titleLabel,
+            vncStatusLabel,
+            vncHostField,
+            vncPortField,
+            vncPasswordField,
+            qualityLabel,
+            vncQualityControl,
+            trackpadRow,
+            connectButton,
+            vncInputField,
+            buttons,
+            vncPreviewView
+        ].forEach(stack.addArrangedSubview)
+
+        return stack
+    }
+
     private func makeKeyCommand(
         _ input: String,
         modifiers: UIKeyModifierFlags = [],
@@ -490,6 +601,9 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
         Task {
             await AppEnvironment.phaseZero.moveCursor(deltaX: deltaX, deltaY: deltaY)
+            if self.routesPointerToVNC {
+                await AppEnvironment.phaseZero.movePointerInFocusedVNC(deltaX: deltaX, deltaY: deltaY)
+            }
             await AppEnvironment.phaseZero.registerControlInput("Trackpad pan")
         }
     }
@@ -497,6 +611,9 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     @objc
     private func handleTrackpadTap() {
         Task {
+            if self.routesPointerToVNC {
+                await AppEnvironment.phaseZero.clickFocusedVNC()
+            }
             await AppEnvironment.phaseZero.registerControlInput("Trackpad tap")
         }
     }
@@ -666,6 +783,51 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     }
 
     @objc
+    private func connectVNC() {
+        view.endEditing(true)
+
+        guard let request = makeVNCRequest() else {
+            Task {
+                await AppEnvironment.phaseZero.registerControlInput("VNC connect skipped: invalid form")
+            }
+            return
+        }
+
+        Task {
+            await AppEnvironment.phaseZero.connectFocusedVNC(using: request)
+        }
+    }
+
+    @objc
+    private func sendTextToVNC() {
+        guard let text = vncInputField.text,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        vncInputField.text = nil
+
+        Task {
+            await AppEnvironment.phaseZero.sendInputToFocusedVNC(text)
+        }
+    }
+
+    @objc
+    private func clickFocusedVNC() {
+        Task {
+            await AppEnvironment.phaseZero.clickFocusedVNC()
+            await AppEnvironment.phaseZero.registerControlInput("VNC primary click")
+        }
+    }
+
+    @objc
+    private func cycleVNCQuality() {
+        Task {
+            await AppEnvironment.phaseZero.cycleQualityPresetForFocusedVNC()
+        }
+    }
+
+    @objc
     private func copyTerminalSelection() {
         Task {
             guard let selectedText = await AppEnvironment.phaseZero.selectedTextForFocusedTerminal(),
@@ -753,6 +915,10 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             sendCommandToTerminal()
         case passwordField:
             connectSSH()
+        case vncInputField:
+            sendTextToVNC()
+        case vncPasswordField:
+            connectVNC()
         case newFolderField:
             createFolderInFiles()
         case renameEntryField:
@@ -799,6 +965,24 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         return terminalState.sessionState == .connected
     }
 
+    private var routesHardwareKeyboardToVNC: Bool {
+        guard let vncWindow = focusedVNCWindow(snapshot: latestSnapshot),
+              let vncState = vncWindow.vncState else {
+            return false
+        }
+
+        return vncState.sessionState == .connected
+    }
+
+    private var routesPointerToVNC: Bool {
+        guard let vncWindow = focusedVNCWindow(snapshot: latestSnapshot),
+              let vncState = vncWindow.vncState else {
+            return false
+        }
+
+        return vncState.sessionState == .connected
+    }
+
     private func configureField(
         _ textField: UITextField,
         placeholder: String,
@@ -843,6 +1027,34 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         )
     }
 
+    private func makeVNCRequest() -> PhaseZeroVNCConnectionRequest? {
+        let host = vncHostField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let password = vncPasswordField.text ?? ""
+        let port = Int(vncPortField.text ?? "") ?? 5900
+
+        guard !host.isEmpty else {
+            return nil
+        }
+
+        let qualityPreset: PhaseZeroVNCQualityPreset
+        switch vncQualityControl.selectedSegmentIndex {
+        case 0:
+            qualityPreset = .low
+        case 2:
+            qualityPreset = .high
+        default:
+            qualityPreset = .balanced
+        }
+
+        return PhaseZeroVNCConnectionRequest(
+            host: host,
+            port: port,
+            password: password,
+            qualityPreset: qualityPreset,
+            isTrackpadModeEnabled: vncTrackpadSwitch.isOn
+        )
+    }
+
     private func focusedTerminalWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
         guard let snapshot else {
             return nil
@@ -867,6 +1079,19 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         }
 
         return snapshot.windows.last(where: { $0.kind == .files })
+    }
+
+    private func focusedVNCWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
+        guard let snapshot else {
+            return nil
+        }
+
+        if let focusedWindowID = snapshot.focusedWindowID,
+           let focusedWindow = snapshot.windows.first(where: { $0.id == focusedWindowID && $0.kind == .vnc }) {
+            return focusedWindow
+        }
+
+        return snapshot.windows.last(where: { $0.kind == .vnc })
     }
 
     private func terminalStatusText(snapshot: PhaseZeroSnapshot) -> String {
@@ -919,6 +1144,28 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
     private func filesPreview(snapshot: PhaseZeroSnapshot) -> String {
         focusedFilesWindow(snapshot: snapshot)?.filesState?.previewText ?? "No files window selected."
+    }
+
+    private func vncStatusText(snapshot: PhaseZeroSnapshot) -> String {
+        guard let vncState = focusedVNCWindow(snapshot: snapshot)?.vncState else {
+            return "VNC: no VNC window selected"
+        }
+
+        return """
+        Remote: \(vncState.connectionTitle)
+        State: \(vncState.sessionState.rawValue.capitalized)
+        Status: \(vncState.statusMessage)
+        Quality: \(vncState.qualityPreset)
+        Pointer: x \(String(format: "%.2f", vncState.remotePointer.x)), y \(String(format: "%.2f", vncState.remotePointer.y))
+        """
+    }
+
+    private func vncPreview(snapshot: PhaseZeroSnapshot) -> String {
+        guard let vncState = focusedVNCWindow(snapshot: snapshot)?.vncState else {
+            return "No VNC window selected."
+        }
+
+        return vncState.frame.renderedText
     }
 
     private func refreshFilesEntries(snapshot: PhaseZeroSnapshot) {
