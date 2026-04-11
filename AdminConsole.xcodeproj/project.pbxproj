@@ -15,7 +15,21 @@
 		A1B2C3D4E5F6000000000065 /* AdminConsoleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000010 /* AdminConsoleTests.swift */; };
 		A1B2C3D4E5F6000000000066 /* AdminConsoleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000011 /* AdminConsoleUITests.swift */; };
 		A1B2C3D4E5F6000000000067 /* AdminConsoleUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000012 /* AdminConsoleUITestsLaunchTests.swift */; };
-		A1B2C3D4E5F600000000006A /* AppPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000069 /* AppPlatform */; };
+		A1B2C3D4E5F600000000006A /* PhaseZeroBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000016 /* PhaseZeroBridge.swift */; };
+		A1B2C3D4E5F6000000000078 /* TerminalSelectionGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */; };
+		A1B2C3D4E5F600000000006B /* ConnectionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000080 /* ConnectionKit */; };
+		A1B2C3D4E5F600000000006C /* DesktopCompositor in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000081 /* DesktopCompositor */; };
+		A1B2C3D4E5F600000000006D /* DesktopDomain in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000082 /* DesktopDomain */; };
+		A1B2C3D4E5F600000000006E /* DesktopStore in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000083 /* DesktopStore */; };
+		A1B2C3D4E5F600000000006F /* FilesFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000084 /* FilesFeature */; };
+		A1B2C3D4E5F6000000000070 /* InputKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000085 /* InputKit */; };
+		A1B2C3D4E5F6000000000071 /* PersistenceKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000086 /* PersistenceKit */; };
+		A1B2C3D4E5F6000000000072 /* RuntimeRegistry in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000087 /* RuntimeRegistry */; };
+		A1B2C3D4E5F6000000000073 /* SecurityKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000088 /* SecurityKit */; };
+		A1B2C3D4E5F6000000000074 /* SSHKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000089 /* SSHKit */; };
+		A1B2C3D4E5F6000000000075 /* TelemetryKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F600000000008A /* TelemetryKit */; };
+		A1B2C3D4E5F6000000000076 /* VNCKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F600000000008B /* VNCKit */; };
+		A1B2C3D4E5F6000000000077 /* WindowManager in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F600000000008C /* WindowManager */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -36,8 +50,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		A1B2C3D4E5F6000000000009 /* Packages/AppModules/Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Packages/AppModules/Package.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F600000000000A /* AdminConsoleApp/Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = AdminConsoleApp/Info.plist; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000009 /* AppModules/Package.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModules/Package.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000000A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000000B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000000C /* ControlSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlSceneDelegate.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSceneDelegate.swift; sourceTree = "<group>"; };
@@ -49,6 +63,8 @@
 		A1B2C3D4E5F6000000000013 /* AdminConsoleApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AdminConsoleApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F6000000000014 /* AdminConsoleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AdminConsoleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F6000000000015 /* AdminConsoleUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AdminConsoleUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F6000000000016 /* PhaseZeroBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhaseZeroBridge.swift; path = ../Packages/AppModules/Sources/AppPlatform/AdminConsoleBootstrap.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TerminalSelectionGeometry.swift; path = ../Packages/AppModules/Sources/AppPlatform/TerminalSelectionGeometry.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,7 +72,19 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1B2C3D4E5F600000000006A /* AppPlatform in Frameworks */,
+				A1B2C3D4E5F600000000006B /* ConnectionKit in Frameworks */,
+				A1B2C3D4E5F600000000006C /* DesktopCompositor in Frameworks */,
+				A1B2C3D4E5F600000000006D /* DesktopDomain in Frameworks */,
+				A1B2C3D4E5F600000000006E /* DesktopStore in Frameworks */,
+				A1B2C3D4E5F600000000006F /* FilesFeature in Frameworks */,
+				A1B2C3D4E5F6000000000070 /* InputKit in Frameworks */,
+				A1B2C3D4E5F6000000000071 /* PersistenceKit in Frameworks */,
+				A1B2C3D4E5F6000000000072 /* RuntimeRegistry in Frameworks */,
+				A1B2C3D4E5F6000000000073 /* SecurityKit in Frameworks */,
+				A1B2C3D4E5F6000000000074 /* SSHKit in Frameworks */,
+				A1B2C3D4E5F6000000000075 /* TelemetryKit in Frameworks */,
+				A1B2C3D4E5F6000000000076 /* VNCKit in Frameworks */,
+				A1B2C3D4E5F6000000000077 /* WindowManager in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -104,8 +132,10 @@
 				A1B2C3D4E5F600000000000B /* AppDelegate.swift */,
 				A1B2C3D4E5F600000000000C /* ControlSceneDelegate.swift */,
 				A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */,
+				A1B2C3D4E5F6000000000016 /* PhaseZeroBridge.swift */,
+				A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */,
 				A1B2C3D4E5F6000000000005 /* ViewControllers */,
-				A1B2C3D4E5F600000000000A /* AdminConsoleApp/Info.plist */,
+				A1B2C3D4E5F600000000000A /* Info.plist */,
 			);
 			path = AdminConsoleApp;
 			sourceTree = "<group>";
@@ -139,9 +169,10 @@
 		A1B2C3D4E5F6000000000008 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				A1B2C3D4E5F6000000000009 /* Packages/AppModules/Package.swift */,
+				A1B2C3D4E5F6000000000009 /* AppModules/Package.swift */,
 			);
 			name = Packages;
+			path = Packages;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -161,7 +192,19 @@
 			);
 			name = AdminConsoleApp;
 			packageProductDependencies = (
-				A1B2C3D4E5F6000000000069 /* AppPlatform */,
+				A1B2C3D4E5F6000000000080 /* ConnectionKit */,
+				A1B2C3D4E5F6000000000081 /* DesktopCompositor */,
+				A1B2C3D4E5F6000000000082 /* DesktopDomain */,
+				A1B2C3D4E5F6000000000083 /* DesktopStore */,
+				A1B2C3D4E5F6000000000084 /* FilesFeature */,
+				A1B2C3D4E5F6000000000085 /* InputKit */,
+				A1B2C3D4E5F6000000000086 /* PersistenceKit */,
+				A1B2C3D4E5F6000000000087 /* RuntimeRegistry */,
+				A1B2C3D4E5F6000000000088 /* SecurityKit */,
+				A1B2C3D4E5F6000000000089 /* SSHKit */,
+				A1B2C3D4E5F600000000008A /* TelemetryKit */,
+				A1B2C3D4E5F600000000008B /* VNCKit */,
+				A1B2C3D4E5F600000000008C /* WindowManager */,
 			);
 			productName = AdminConsoleApp;
 			productReference = A1B2C3D4E5F6000000000013 /* AdminConsoleApp.app */;
@@ -286,6 +329,8 @@
 				A1B2C3D4E5F6000000000060 /* AppDelegate.swift in Sources */,
 				A1B2C3D4E5F6000000000061 /* ControlSceneDelegate.swift in Sources */,
 				A1B2C3D4E5F6000000000062 /* DesktopSceneDelegate.swift in Sources */,
+				A1B2C3D4E5F600000000006A /* PhaseZeroBridge.swift in Sources */,
+				A1B2C3D4E5F6000000000078 /* TerminalSelectionGeometry.swift in Sources */,
 				A1B2C3D4E5F6000000000063 /* ControlRootViewController.swift in Sources */,
 				A1B2C3D4E5F6000000000064 /* DesktopRootViewController.swift in Sources */,
 			);
@@ -341,7 +386,7 @@
 					"$(inherited)",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				SDKROOT = iphoneos;
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -359,8 +404,8 @@
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
 			};
@@ -384,8 +429,8 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.AdminConsole;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -410,8 +455,8 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.AdminConsole;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -565,10 +610,70 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A1B2C3D4E5F6000000000069 /* AppPlatform */ = {
+		A1B2C3D4E5F6000000000080 /* ConnectionKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
-			productName = AppPlatform;
+			productName = ConnectionKit;
+		};
+		A1B2C3D4E5F6000000000081 /* DesktopCompositor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = DesktopCompositor;
+		};
+		A1B2C3D4E5F6000000000082 /* DesktopDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = DesktopDomain;
+		};
+		A1B2C3D4E5F6000000000083 /* DesktopStore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = DesktopStore;
+		};
+		A1B2C3D4E5F6000000000084 /* FilesFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = FilesFeature;
+		};
+		A1B2C3D4E5F6000000000085 /* InputKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = InputKit;
+		};
+		A1B2C3D4E5F6000000000086 /* PersistenceKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = PersistenceKit;
+		};
+		A1B2C3D4E5F6000000000087 /* RuntimeRegistry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = RuntimeRegistry;
+		};
+		A1B2C3D4E5F6000000000088 /* SecurityKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = SecurityKit;
+		};
+		A1B2C3D4E5F6000000000089 /* SSHKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = SSHKit;
+		};
+		A1B2C3D4E5F600000000008A /* TelemetryKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = TelemetryKit;
+		};
+		A1B2C3D4E5F600000000008B /* VNCKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = VNCKit;
+		};
+		A1B2C3D4E5F600000000008C /* WindowManager */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D4E5F6000000000068 /* XCLocalSwiftPackageReference "Packages/AppModules" */;
+			productName = WindowManager;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

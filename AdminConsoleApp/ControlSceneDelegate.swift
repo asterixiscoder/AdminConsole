@@ -1,4 +1,3 @@
-import AppPlatform
 import UIKit
 
 final class ControlSceneDelegate: UIResponder, UIWindowSceneDelegate {
