@@ -16,7 +16,6 @@ AdminConsole/
 │  ├─ 08-risks-and-decisions.md
 │  ├─ 09-roadmap-mvp.md
 │  └─ 10-testing-and-validation.md
-├─ AdminConsole.xcworkspace
 ├─ AdminConsole.xcodeproj
 ├─ Packages/
 │  └─ AppModules/
@@ -28,7 +27,7 @@ AdminConsole/
 
 ## Xcode Targets
 
-Open `AdminConsole.xcodeproj` directly in Xcode. The local `Packages/AppModules` package should be consumed through the project's Swift Package reference, not as a separate manually opened project.
+Open `AdminConsole.xcodeproj` directly in Xcode. The local `Packages/AppModules` package should be consumed through the project's Swift Package reference, not as a separate manually opened project or an extra top-level workspace.
 
 ### `AdminConsoleApp`
 

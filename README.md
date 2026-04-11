@@ -26,7 +26,6 @@ The repository currently contains:
 ```text
 AdminConsole/
 ├─ AdminConsole.xcodeproj
-├─ AdminConsole.xcworkspace
 ├─ AdminConsoleApp/
 ├─ AdminConsoleTests/
 ├─ AdminConsoleUITests/
@@ -42,7 +41,8 @@ AdminConsole/
 
 Open `AdminConsole.xcodeproj` in Xcode.
 
-The local `AppModules` package is already attached to the project as a Swift Package dependency, so a separate workspace is not required for day-to-day development.
+The local `AppModules` package is already attached to the project as a Swift Package dependency.
+Do not create or commit a separate top-level `.xcworkspace`; use the project directly for day-to-day development.
 
 ### Local Checks
 
