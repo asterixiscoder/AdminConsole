@@ -44,6 +44,10 @@ public actor VNCRuntime {
     private var configuration: VNCSessionConfiguration?
     private var client: RFBClient?
     private var pressedButtons: Set<PointerButton> = []
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnectAttempt: Int = 0
+    private var shouldMaintainConnection = false
+    private var isLifecycleSuspended = false
 
     public init(
         windowID: WindowID,
@@ -60,9 +64,13 @@ public actor VNCRuntime {
 
     @discardableResult
     public func connect(using configuration: VNCSessionConfiguration) async -> Bool {
-        await disconnect()
-
+        shouldMaintainConnection = true
+        isLifecycleSuspended = false
         self.configuration = configuration
+        reconnectAttempt = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        await disconnectTransport()
         pressedButtons.removeAll()
         surface = VNCSurfaceState(
             connectionTitle: configuration.connection.displayName,
@@ -76,10 +84,94 @@ public actor VNCRuntime {
             qualityPreset: configuration.qualityPreset.rawValue,
             isTrackpadModeEnabled: configuration.isTrackpadModeEnabled,
             remotePointer: CursorState(x: 0.32, y: 0.40),
-            recentEvents: ["Connect requested"]
+            recentEvents: ["Connect requested"],
+            reconnectAttempt: nil,
+            reconnectSecondsRemaining: nil
         )
         await publish()
 
+        return await connectTransport(using: configuration)
+    }
+
+    public func reconnect() async {
+        guard let configuration else {
+            return
+        }
+
+        shouldMaintainConnection = true
+        isLifecycleSuspended = false
+        reconnectAttempt = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        await disconnectTransport()
+        pressedButtons.removeAll()
+        syncPressedButtonsIntoSurface()
+        surface.reconnectAttempt = nil
+        surface.reconnectSecondsRemaining = nil
+        surface.sessionState = .connecting
+        surface.statusMessage = "Reconnect requested"
+        surface.appendEvent("Manual reconnect")
+        await publish()
+
+        _ = await connectTransport(using: configuration)
+    }
+
+    public func disconnect() async {
+        shouldMaintainConnection = false
+        isLifecycleSuspended = false
+        reconnectAttempt = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        await disconnectTransport()
+        pressedButtons.removeAll()
+        surface.activePointerButtons = []
+        surface.reconnectAttempt = nil
+        surface.reconnectSecondsRemaining = nil
+
+        if surface.sessionState != .idle {
+            surface.sessionState = .idle
+            surface.statusMessage = "VNC session closed"
+            surface.appendEvent("Disconnected")
+            await publish()
+        }
+    }
+
+    public func suspendForBackground() async {
+        isLifecycleSuspended = true
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        await disconnectTransport()
+        pressedButtons.removeAll()
+        surface.activePointerButtons = []
+        surface.reconnectAttempt = nil
+        surface.reconnectSecondsRemaining = nil
+
+        if shouldMaintainConnection {
+            surface.sessionState = .idle
+            surface.statusMessage = "Session paused while app is in background"
+            surface.appendEvent("Paused for background")
+            await publish()
+        }
+    }
+
+    public func resumeAfterForeground() async {
+        guard isLifecycleSuspended else {
+            return
+        }
+
+        isLifecycleSuspended = false
+        guard shouldMaintainConnection, let configuration else {
+            return
+        }
+
+        surface.sessionState = .connecting
+        surface.statusMessage = "Resuming VNC session"
+        surface.appendEvent("Resume after foreground")
+        await publish()
+        _ = await connectTransport(using: configuration)
+    }
+
+    private func connectTransport(using configuration: VNCSessionConfiguration) async -> Bool {
         let client = RFBClient(configuration: configuration) { [weak self] (snapshot: RFBFramebufferSnapshot) in
             guard let self else {
                 return
@@ -98,13 +190,24 @@ public actor VNCRuntime {
             }
 
             await self.handleBell()
+        } onDisconnect: { [weak self] error in
+            guard let self else {
+                return
+            }
+
+            await self.handleTransportDisconnect(error)
         }
         self.client = client
 
         do {
             let snapshot = try await client.connect()
+            reconnectAttempt = 0
+            reconnectTask?.cancel()
+            reconnectTask = nil
             surface.sessionState = .connected
             surface.statusMessage = "Connected to remote VNC desktop"
+            surface.reconnectAttempt = nil
+            surface.reconnectSecondsRemaining = nil
             surface.remoteDesktopName = snapshot.desktopName
             surface.qualityPreset = configuration.qualityPreset.rawValue
             surface.appendEvent("Framebuffer ready")
@@ -113,7 +216,9 @@ public actor VNCRuntime {
             return true
         } catch {
             surface.sessionState = .failed
-            surface.statusMessage = error.localizedDescription
+            surface.statusMessage = VNCReconnectPolicy.userFacingStatus(for: error)
+            surface.reconnectAttempt = nil
+            surface.reconnectSecondsRemaining = nil
             surface.appendEvent("Connection failed")
             surface.frame = .placeholder(
                 title: "VNC connection failed",
@@ -121,23 +226,8 @@ public actor VNCRuntime {
             )
             self.client = nil
             await publish()
+            await scheduleReconnectIfNeeded(after: error)
             return false
-        }
-    }
-
-    public func disconnect() async {
-        if let client {
-            await client.disconnect()
-        }
-        client = nil
-        pressedButtons.removeAll()
-        surface.activePointerButtons = []
-
-        if surface.sessionState == .connected || surface.sessionState == .connecting {
-            surface.sessionState = .failed
-            surface.statusMessage = "VNC session closed"
-            surface.appendEvent("Disconnected")
-            await publish()
         }
     }
 
@@ -412,10 +502,86 @@ public actor VNCRuntime {
 
     private func presentTransportFailure(_ error: Error) async {
         pressedButtons.removeAll()
-        surface.activePointerButtons = []
+        syncPressedButtonsIntoSurface()
+        await handleTransportDisconnect(error)
+    }
+
+    private func handleTransportDisconnect(_ error: Error) async {
+        guard shouldMaintainConnection, !isLifecycleSuspended else {
+            return
+        }
+
+        await disconnectTransport()
         surface.sessionState = .failed
-        surface.statusMessage = error.localizedDescription
-        surface.appendEvent("Transport failure")
+        surface.statusMessage = VNCReconnectPolicy.userFacingStatus(for: error)
+        surface.reconnectAttempt = nil
+        surface.reconnectSecondsRemaining = nil
+        let category = VNCReconnectPolicy.classify(error).title
+        surface.appendEvent("\(category) transport failure")
+        await publish()
+        await scheduleReconnectIfNeeded(after: error)
+    }
+
+    private func scheduleReconnectIfNeeded(after error: Error) async {
+        guard shouldMaintainConnection, !isLifecycleSuspended, let configuration else {
+            return
+        }
+
+        guard VNCReconnectPolicy.shouldRetry(error) else {
+            return
+        }
+
+        reconnectAttempt += 1
+        let delaySeconds = VNCReconnectPolicy.delaySeconds(forAttempt: reconnectAttempt)
+        let attempt = reconnectAttempt
+
+        reconnectTask?.cancel()
+        reconnectTask = Task { [weak self] in
+            var remaining = delaySeconds
+            while remaining > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else {
+                    return
+                }
+                remaining -= 1
+                await self?.updateReconnectCountdown(remaining: remaining, attempt: attempt)
+            }
+
+            await self?.executeReconnectAttempt(number: attempt, configuration: configuration)
+        }
+
+        surface.sessionState = .connecting
+        surface.statusMessage = "Network issue, reconnect in \(delaySeconds)s (attempt #\(attempt))"
+        surface.reconnectAttempt = attempt
+        surface.reconnectSecondsRemaining = delaySeconds
+        surface.appendEvent("Reconnect scheduled #\(attempt) in \(delaySeconds)s")
+        await publish()
+    }
+
+    private func executeReconnectAttempt(number: Int, configuration: VNCSessionConfiguration) async {
+        guard shouldMaintainConnection, !isLifecycleSuspended, reconnectAttempt == number else {
+            return
+        }
+
+        _ = await connectTransport(using: configuration)
+    }
+
+    private func disconnectTransport() async {
+        if let client {
+            await client.disconnect()
+        }
+        client = nil
+    }
+
+    private func updateReconnectCountdown(remaining: Int, attempt: Int) async {
+        guard reconnectAttempt == attempt else {
+            return
+        }
+
+        surface.sessionState = .connecting
+        surface.reconnectAttempt = attempt
+        surface.reconnectSecondsRemaining = max(0, remaining)
+        surface.statusMessage = "Network issue, reconnect in \(max(0, remaining))s (attempt #\(attempt))"
         await publish()
     }
 

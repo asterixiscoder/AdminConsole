@@ -21,6 +21,7 @@ Primary targets:
 - input routing resolution in `InputKit`
 - persistence serialization
 - connection metadata validation
+- VNC reconnect classification and backoff policy
 
 ### Integration Tests
 
@@ -31,6 +32,7 @@ Primary targets:
 - SSH session state transitions
 - VNC connection and render pipeline
 - browser metadata restore
+- app lifecycle pause/resume for long-lived runtimes
 
 ### UI Tests
 
@@ -87,6 +89,7 @@ Validate:
 - app background and foreground cycle
 - scene recreation
 - reconnect after transient network interruption
+- reconnect countdown visibility in desktop VNC overlay
 
 ## Performance Validation
 
@@ -108,3 +111,17 @@ Before MVP release candidate:
 4. Review crash telemetry from internal testing.
 5. Reconfirm browser and VNC quality against original acceptance criteria.
 
+## Current Automated Baseline
+
+The repository currently validates on every iteration with:
+
+- `swift test --package-path Packages/AppModules`
+- `xcodebuild -project AdminConsole.xcodeproj -scheme AdminConsoleApp -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' ...`
+
+The package test suite already covers:
+
+- terminal emulator parsing and buffer behavior
+- desktop store state transitions
+- files runtime operations
+- security stores (credentials and host keys)
+- VNC decoder logic and reconnect policy rules

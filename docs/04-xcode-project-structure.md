@@ -22,12 +22,17 @@ AdminConsole/
 │     ├─ Package.swift
 │     ├─ Sources/
 │     └─ Tests/
-└─ Resources/
+└─ .github/workflows/
 ```
 
 ## Xcode Targets
 
 Open `AdminConsole.xcodeproj` directly in Xcode. The local `Packages/AppModules` package should be consumed through the project's Swift Package reference, not as a separate manually opened project or an extra top-level workspace.
+
+Practical build note:
+
+- simulator builds are configured for Apple Silicon simulator architecture (`arm64`)
+- the project disables problematic explicit module planning for this setup to avoid intermittent local package module resolution failures
 
 ### `AdminConsoleApp`
 

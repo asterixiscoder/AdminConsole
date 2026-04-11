@@ -4,6 +4,11 @@
 
 The project should be split into focused modules with clear responsibilities and narrow dependencies.
 
+Current implementation note:
+
+- all modules listed below already exist in `Packages/AppModules`
+- `AppPlatform` is currently consumed directly by the iOS app target while feature modules are wired through `PhaseZeroCoordinator`
+
 ## Core Modules
 
 ### `AppPlatform`
@@ -22,6 +27,15 @@ Depends on:
 - `RuntimeRegistry`
 - `PersistenceKit`
 - `SecurityKit`
+- `DesktopDomain`
+- `DesktopCompositor`
+- `WindowManager`
+- `InputKit`
+- `ConnectionKit`
+- `FilesFeature`
+- `SSHKit`
+- `VNCKit`
+- `TelemetryKit`
 
 ### `DesktopDomain`
 
@@ -60,10 +74,10 @@ Responsibilities:
 
 Managed runtimes:
 
-- `TerminalRuntime`
+- `SSHTerminalRuntime`
 - `VNCRuntime`
-- `BrowserRuntime`
-- file browsing runtime helpers
+- `FilesWorkspaceRuntime`
+- browser handle placeholders
 
 ### `WindowManager`
 
@@ -100,6 +114,10 @@ Responsibilities:
 - connection metadata
 - reconnect policies
 - transport-neutral authentication models
+
+Current status:
+
+- reconnect policy is actively implemented for VNC in `VNCKit/VNCReconnectPolicy.swift`
 
 Submodules:
 

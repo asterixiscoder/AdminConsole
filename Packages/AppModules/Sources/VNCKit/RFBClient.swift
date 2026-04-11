@@ -68,6 +68,7 @@ public actor RFBClient {
     private let onFramebufferUpdate: @Sendable (RFBFramebufferSnapshot) async -> Void
     private let onServerCutText: (@Sendable (String) async -> Void)?
     private let onBell: (@Sendable () async -> Void)?
+    private let onDisconnect: (@Sendable (Error) async -> Void)?
 
     private var connection: NWConnection?
     private var receiveBuffer = Data()
@@ -82,12 +83,14 @@ public actor RFBClient {
         configuration: VNCSessionConfiguration,
         onFramebufferUpdate: @escaping @Sendable (RFBFramebufferSnapshot) async -> Void,
         onServerCutText: (@Sendable (String) async -> Void)? = nil,
-        onBell: (@Sendable () async -> Void)? = nil
+        onBell: (@Sendable () async -> Void)? = nil,
+        onDisconnect: (@Sendable (Error) async -> Void)? = nil
     ) {
         self.configuration = configuration
         self.onFramebufferUpdate = onFramebufferUpdate
         self.onServerCutText = onServerCutText
         self.onBell = onBell
+        self.onDisconnect = onDisconnect
         self.queue = DispatchQueue(label: "AdminConsole.RFBClient.\(configuration.connection.host).\(configuration.connection.port)")
     }
 
@@ -390,6 +393,9 @@ public actor RFBClient {
         } catch {
             if Task.isCancelled {
                 return
+            }
+            if let onDisconnect {
+                await onDisconnect(error)
             }
         }
     }

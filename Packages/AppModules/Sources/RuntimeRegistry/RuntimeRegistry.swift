@@ -86,4 +86,16 @@ public actor RuntimeRegistry {
 
         handles.removeValue(forKey: windowID)
     }
+
+    public func suspendAllVNCRuntimes() async {
+        for runtime in vncRuntimes.values {
+            await runtime.suspendForBackground()
+        }
+    }
+
+    public func resumeAllVNCRuntimes() async {
+        for runtime in vncRuntimes.values {
+            await runtime.resumeAfterForeground()
+        }
+    }
 }

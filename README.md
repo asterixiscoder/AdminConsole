@@ -10,6 +10,9 @@ The repository currently contains:
 - a local Swift package for modular core logic
 - Phase 0 prototype wiring for multi-scene desktop state
 - a live SSH terminal runtime wired through `RuntimeRegistry`
+- an in-app files workspace with import and export
+- a real VNC runtime with password auth, Hextile/ZRLE decoding, pointer/drag/wheel, and clipboard bridge
+- VNC reconnect handling (auto-reconnect backoff, lifecycle pause/resume, reconnect indicator on desktop scene)
 - architecture and roadmap documentation
 
 ## Current Status
@@ -20,6 +23,9 @@ The repository currently contains:
 - control scene and external desktop scene both wired to shared state
 - browser spike and keyboard/pointer prototype started
 - focused terminal windows can open a real SSH shell session
+- host key validation and Keychain-backed SSH credential reuse
+- files runtime import and export flows
+- VNC runtime with reconnect UX and transport-level state handling
 
 ## Repository Layout
 
@@ -44,6 +50,8 @@ Open `AdminConsole.xcodeproj` in Xcode.
 The local `AppModules` package is already attached to the project as a Swift Package dependency.
 Do not create or commit a separate top-level `.xcworkspace`; use the project directly for day-to-day development.
 
+If Xcode resolves simulator architectures incorrectly on your machine, re-open the project and verify the app builds for Apple Silicon simulator (`arm64`) rather than `x86_64`.
+
 ### Local Checks
 
 Swift Package tests:
@@ -62,6 +70,21 @@ xcodebuild -project AdminConsole.xcodeproj \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath /tmp/AdminConsoleDerivedData \
   build CODE_SIGNING_ALLOWED=NO
+
+Recommended for local consistency with CI cache paths:
+
+```bash
+env HOME=/tmp/adminconsole-home \
+  CFFIXED_USER_HOME=/tmp/adminconsole-home \
+  XDG_CACHE_HOME=/tmp/adminconsole-xdg \
+  CLANG_MODULE_CACHE_PATH=/tmp/adminconsole-clang-cache \
+  xcodebuild -project AdminConsole.xcodeproj \
+  -scheme AdminConsoleApp \
+  -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /tmp/AdminConsoleDerivedData \
+  build CODE_SIGNING_ALLOWED=NO
+```
 ```
 
 ## Branching Model

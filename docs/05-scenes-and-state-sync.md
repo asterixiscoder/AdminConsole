@@ -37,6 +37,12 @@ Contains live objects that should not be serialized into the store:
 - VNC frame streams
 - browser hosts and snapshots
 
+Current lifecycle behavior:
+
+- VNC runtimes are paused when the app enters background
+- VNC runtimes are resumed on foreground entry
+- reconnect attempt state is synchronized through shared snapshot data
+
 ## Action Flow
 
 ```mermaid
@@ -115,8 +121,9 @@ This is the main reason browser support carries higher implementation risk than 
 
 1. Flush important state to persistence
 2. Mark restorable sessions
-3. downgrade rendering work
-4. handle network limitations conservatively
+3. Downgrade rendering work
+4. Pause VNC transport work and resume on foreground
+5. Handle network limitations conservatively
 
 ## Conflict Strategy
 
@@ -143,4 +150,3 @@ Do not persist:
 - raw framebuffer data
 - UIKit view instances
 - large transient caches
-

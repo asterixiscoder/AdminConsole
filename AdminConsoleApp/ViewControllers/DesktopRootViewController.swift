@@ -188,6 +188,14 @@ final class DesktopRootViewController: UIViewController {
         panel.addSubview(subtitle)
         panel.addSubview(contentView)
 
+        var reconnectIndicator: UIView?
+        if window.kind == .vnc,
+           let indicator = makeVNCReconnectIndicator(for: window.vncState) {
+            indicator.translatesAutoresizingMaskIntoConstraints = false
+            panel.addSubview(indicator)
+            reconnectIndicator = indicator
+        }
+
         NSLayoutConstraint.activate([
             chrome.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
             chrome.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
@@ -206,6 +214,13 @@ final class DesktopRootViewController: UIViewController {
             contentView.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 14),
             contentView.bottomAnchor.constraint(lessThanOrEqualTo: panel.bottomAnchor, constant: -16)
         ])
+
+        if let reconnectIndicator {
+            NSLayoutConstraint.activate([
+                reconnectIndicator.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -12),
+                reconnectIndicator.topAnchor.constraint(equalTo: panel.topAnchor, constant: 10)
+            ])
+        }
 
         return panel
     }
@@ -505,6 +520,37 @@ final class DesktopRootViewController: UIViewController {
         let clipboardState = state.remoteClipboardText?.isEmpty == false ? "available" : "empty"
         let activeButtons = state.activePointerButtons.isEmpty ? "none" : state.activePointerButtons.joined(separator: ", ")
         return "\(state.connectionTitle)\nQuality: \(state.qualityPreset) • Trackpad: \(state.isTrackpadModeEnabled ? "on" : "off") • Bells: \(state.bellCount)\nButtons: \(activeButtons) • Clipboard: \(clipboardState)\n\(state.statusMessage)\n\(events)"
+    }
+
+    private func makeVNCReconnectIndicator(for state: PhaseZeroVNCState?) -> UIView? {
+        guard let state,
+              state.sessionState == .connecting,
+              let attempt = state.reconnectAttempt,
+              let seconds = state.reconnectSecondsRemaining else {
+            return nil
+        }
+
+        let container = UIView()
+        container.backgroundColor = UIColor.systemOrange.withAlphaComponent(0.22)
+        container.layer.cornerRadius = 10
+        container.layer.borderWidth = 1
+        container.layer.borderColor = UIColor.systemOrange.withAlphaComponent(0.70).cgColor
+
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .monospacedSystemFont(ofSize: 11, weight: .semibold)
+        label.textColor = UIColor.systemOrange
+        label.text = "Reconnect #\(attempt) in \(seconds)s"
+
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 5),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -5)
+        ])
+
+        return container
     }
 
     private func vncFramebufferImage(_ state: PhaseZeroVNCState?) -> UIImage? {

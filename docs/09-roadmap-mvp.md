@@ -14,6 +14,23 @@ Deliver the first usable version of AdminConsole with:
 - keyboard and pointer support
 - reconnect-safe layout restore
 
+## Progress Snapshot
+
+Completed:
+
+- Phase 0 technical spike
+- Core desktop foundation and shared state wiring
+- Input routing prototype for keyboard and pointer
+- SSH terminal runtime with host key validation and Keychain credential reuse
+- Files workspace with import and export
+- VNC runtime with password auth, richer encodings, pointer/drag/wheel, clipboard bridge
+- VNC reconnect flow with lifecycle pause/resume and desktop reconnect indicator
+
+In progress:
+
+- Browser module hardening beyond spike-level host
+- Release hardening and QA matrix completion
+
 ## Delivery Strategy
 
 The roadmap is structured around technical risk, not feature marketing order. The most uncertain foundations must be validated first.
@@ -166,6 +183,10 @@ Exit Criteria:
 2. Browser input and desktop shortcuts coexist predictably.
 3. Browser scene ownership rules are stable enough for ongoing development.
 
+Current status:
+
+- browser exists as a spike path and is not yet hardened to MVP-quality parity with terminal/files/VNC
+
 ## Phase 7: Hardening and Release Candidate
 
 Goal:
@@ -186,6 +207,12 @@ Exit Criteria:
 1. External display reconnect is reliable.
 2. State restoration is acceptable after app relaunch.
 3. No blocker remains in input, rendering, or session stability.
+
+Current next focus:
+
+1. Browser hardening and restore behavior
+2. Final external-display reconnect QA matrix
+3. Performance profiling on high-resolution outputs
 
 ## Suggested Sequence and Duration
 

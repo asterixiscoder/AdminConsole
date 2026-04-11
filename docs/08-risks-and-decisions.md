@@ -41,6 +41,20 @@ Impact:
 - requires stable runtime identifiers
 - introduces registry lifecycle management complexity
 
+### Decision 4: In-House VNC Transport Layer
+
+Status: accepted
+
+Reason:
+
+- remove dependency on unverified third-party VNC wrappers during MVP
+- keep full control over protocol handling and reconnect behavior
+
+Impact:
+
+- `VNCKit` now owns RFB handshake, auth, encoding decode, and reconnect policy
+- performance optimization remains an internal responsibility
+
 ## Key Risks
 
 ### Risk 1: Browser Window Ownership
@@ -81,6 +95,10 @@ Fallback:
 
 - ship VNC after terminal and files if library viability is not proven early
 
+Current status:
+
+- mitigated for MVP by shipping an in-house VNC transport layer inside `VNCKit`
+
 ### Risk 3: Input Complexity
 
 Severity: high
@@ -108,6 +126,8 @@ Mitigation:
 - use logical geometry
 - validate restoration against visible bounds
 - store display profiles separately from window layout
+- pause and resume VNC runtimes on app background and foreground
+- publish reconnect attempt/countdown state into shared desktop snapshot
 
 ### Risk 5: Performance at High Resolution
 

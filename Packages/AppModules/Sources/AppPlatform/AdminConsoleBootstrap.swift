@@ -183,6 +183,16 @@ public actor PhaseZeroCoordinator {
         bootstrap.logger.log("Phase 0 bootstrap started")
     }
 
+    public func applicationDidEnterBackground() async {
+        await bootstrap.runtimes.suspendAllVNCRuntimes()
+        await registerControlInput("App entered background: VNC sessions paused")
+    }
+
+    public func applicationWillEnterForeground() async {
+        await bootstrap.runtimes.resumeAllVNCRuntimes()
+        await registerControlInput("App entered foreground: VNC sessions resumed")
+    }
+
     public func snapshots() async -> AsyncStream<PhaseZeroSnapshot> {
         await bootstrap.store.snapshots()
     }
@@ -444,6 +454,28 @@ public actor PhaseZeroCoordinator {
         await focusWindow(windowID)
         await registerControlInput("VNC connect: \(request.connectionSummary)")
         _ = await runtime.connect(using: request.runtimeConfiguration())
+    }
+
+    public func reconnectFocusedVNC() async {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            await registerControlInput("VNC reconnect skipped: no focused VNC window")
+            return
+        }
+
+        await runtime.reconnect()
+        await registerControlInput("VNC reconnect requested")
+    }
+
+    public func disconnectFocusedVNC() async {
+        guard let windowID = await targetVNCWindowID(),
+              let runtime = await vncRuntime(for: windowID) else {
+            await registerControlInput("VNC disconnect skipped: no focused VNC window")
+            return
+        }
+
+        await runtime.disconnect()
+        await registerControlInput("VNC disconnected")
     }
 
     public func movePointerInFocusedVNC(deltaX: Double, deltaY: Double) async {

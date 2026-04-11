@@ -11,6 +11,13 @@ The MVP includes four user-facing feature areas:
 
 Each module should own its UI and runtime integration, but must follow the same desktop contracts.
 
+Implementation status (current):
+
+- `Terminal`: implemented with real SSH runtime, VT100/xterm parsing, selection/copy flows
+- `Files`: implemented with in-app workspace plus import/export
+- `Browser`: spike-level scene-local web host
+- `VNC`: implemented runtime with real RFB transport and interaction controls
+
 ## Terminal Module
 
 ### Responsibilities
@@ -38,6 +45,7 @@ Each module should own its UI and runtime integration, but must follow the same 
 - standard copy and paste
 - host key validation with trust-on-first-use
 - Keychain-backed password reuse for repeated SSH connections
+- terminal buffer rendering with ANSI SGR support and color cells
 
 ## Files Module
 
@@ -107,6 +115,10 @@ The browser is the riskiest MVP feature because the interactive web view is tied
 - keyboard forwarding
 - clipboard bridge
 - quality presets
+- password authentication
+- richer encodings (`Raw`, `RRE`, `Hextile`, `ZRLE`)
+- pointer buttons, drag semantics, and wheel events
+- runtime reconnect policy with lifecycle-aware pause/resume
 
 ### Main Risk
 

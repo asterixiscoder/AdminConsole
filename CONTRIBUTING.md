@@ -53,6 +53,8 @@ xcodebuild -project AdminConsole.xcodeproj \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath /tmp/AdminConsoleDerivedData \
   build CODE_SIGNING_ALLOWED=NO
+
+If simulator build fails with mixed `x86_64/arm64` package modules, ensure Xcode targets Apple Silicon simulator (`arm64`) for this project configuration.
 ```
 
 ## Commit Guidance
@@ -66,4 +68,3 @@ Good examples:
 - `Add shared desktop snapshot stream`
 - `Wire external scene to PhaseZeroCoordinator`
 - `Add GitHub Actions iOS CI workflow`
-

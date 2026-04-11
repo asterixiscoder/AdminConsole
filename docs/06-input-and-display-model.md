@@ -141,6 +141,15 @@ Minimum rules:
 - map local keyboard accurately
 - support remote clipboard exchange
 - expose remote scaling and pointer sensitivity settings
+- support explicit pointer button down/up semantics for drag operations
+- support wheel up/down actions from control scene
+
+## Reconnect Visibility Model
+
+When VNC transport reconnect is in progress, reconnect state should be visible in both scenes:
+
+- iPhone control scene shows latest status and event summary
+- external desktop scene shows reconnect attempt and countdown overlay on the VNC window
 
 ## Browser-Specific Input Rules
 
@@ -155,4 +164,3 @@ Minimum rules:
 - window focused on a disconnected runtime
 - resolution changes while windows are maximized
 - text input after switching between terminal and browser
-

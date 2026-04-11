@@ -611,6 +611,8 @@ public struct VNCSurfaceState: Codable, Equatable, Sendable {
     public var remoteClipboardText: String?
     public var bellCount: Int
     public var recentEvents: [String]
+    public var reconnectAttempt: Int?
+    public var reconnectSecondsRemaining: Int?
 
     public init(
         connectionTitle: String = "VNC",
@@ -624,7 +626,9 @@ public struct VNCSurfaceState: Codable, Equatable, Sendable {
         activePointerButtons: [String] = [],
         remoteClipboardText: String? = nil,
         bellCount: Int = 0,
-        recentEvents: [String] = []
+        recentEvents: [String] = [],
+        reconnectAttempt: Int? = nil,
+        reconnectSecondsRemaining: Int? = nil
     ) {
         self.connectionTitle = connectionTitle
         self.sessionState = sessionState
@@ -638,6 +642,8 @@ public struct VNCSurfaceState: Codable, Equatable, Sendable {
         self.remoteClipboardText = remoteClipboardText
         self.bellCount = max(0, bellCount)
         self.recentEvents = Array(recentEvents.suffix(Self.maximumEventLogCount))
+        self.reconnectAttempt = reconnectAttempt
+        self.reconnectSecondsRemaining = reconnectSecondsRemaining.map { max(0, $0) }
     }
 
     public static func idle(title: String = "VNC") -> VNCSurfaceState {

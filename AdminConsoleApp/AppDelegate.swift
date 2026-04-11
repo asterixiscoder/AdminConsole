@@ -32,6 +32,18 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             )
         }
     }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        Task {
+            await AppEnvironment.phaseZero.applicationDidEnterBackground()
+        }
+    }
+
+    func applicationWillEnterForeground(_ application: UIApplication) {
+        Task {
+            await AppEnvironment.phaseZero.applicationWillEnterForeground()
+        }
+    }
 }
 
 enum AppEnvironment {

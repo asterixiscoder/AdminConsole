@@ -542,6 +542,24 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         connectButton.configuration?.title = "Connect Focused VNC"
         connectButton.addTarget(self, action: #selector(connectVNC), for: .touchUpInside)
 
+        let sessionButtons = UIStackView()
+        sessionButtons.axis = .horizontal
+        sessionButtons.spacing = 8
+        sessionButtons.distribution = .fillEqually
+
+        let reconnectButton = UIButton(type: .system)
+        reconnectButton.configuration = .tinted()
+        reconnectButton.configuration?.title = "Reconnect"
+        reconnectButton.addTarget(self, action: #selector(reconnectVNC), for: .touchUpInside)
+
+        let disconnectButton = UIButton(type: .system)
+        disconnectButton.configuration = .plain()
+        disconnectButton.configuration?.title = "Disconnect"
+        disconnectButton.configuration?.baseForegroundColor = .systemRed
+        disconnectButton.addTarget(self, action: #selector(disconnectVNC), for: .touchUpInside)
+
+        [reconnectButton, disconnectButton].forEach(sessionButtons.addArrangedSubview)
+
         let buttons = UIStackView()
         buttons.axis = .horizontal
         buttons.spacing = 8
@@ -622,6 +640,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             vncQualityControl,
             trackpadRow,
             connectButton,
+            sessionButtons,
             vncInputField,
             buttons,
             pointerModeButtons,
@@ -851,6 +870,20 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
         Task {
             await AppEnvironment.phaseZero.connectFocusedVNC(using: request)
+        }
+    }
+
+    @objc
+    private func reconnectVNC() {
+        Task {
+            await AppEnvironment.phaseZero.reconnectFocusedVNC()
+        }
+    }
+
+    @objc
+    private func disconnectVNC() {
+        Task {
+            await AppEnvironment.phaseZero.disconnectFocusedVNC()
         }
     }
 
@@ -1279,11 +1312,13 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         }
 
         let activeButtons = vncState.activePointerButtons.isEmpty ? "none" : vncState.activePointerButtons.joined(separator: ", ")
+        let lastEvent = vncState.recentEvents.last ?? "none"
 
         return """
         Remote: \(vncState.connectionTitle)
         State: \(vncState.sessionState.rawValue.capitalized)
         Status: \(vncState.statusMessage)
+        Last Event: \(lastEvent)
         Quality: \(vncState.qualityPreset)
         Pointer: x \(String(format: "%.2f", vncState.remotePointer.x)), y \(String(format: "%.2f", vncState.remotePointer.y))
         Active Buttons: \(activeButtons)
