@@ -191,6 +191,10 @@ let package = Package(
                 "ConnectionKit",
                 "VNCKit"
             ]
+        ),
+        .testTarget(
+            name: "PersistenceKitTests",
+            dependencies: ["PersistenceKit"]
         )
     ]
 )

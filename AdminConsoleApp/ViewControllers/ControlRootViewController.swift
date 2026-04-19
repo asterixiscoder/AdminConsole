@@ -1,4 +1,5 @@
 import UIKit
+import PersistenceKit
 
 @MainActor
 final class ControlRootViewController: UIViewController, UITextFieldDelegate {
@@ -45,6 +46,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
     private var updatesTask: Task<Void, Never>?
     private var latestSnapshot: PhaseZeroSnapshot?
     private var sshConnectTask: Task<Void, Never>?
+    private var selectedSSHHostPreset: TermiusHostPreset?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -265,6 +267,9 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         sshConnectTask = Task { [weak self] in
             guard let self else { return }
             let didConnect = await AppEnvironment.phaseZero.connectFocusedTerminal(using: request)
+            if didConnect {
+                await self.persistRecentHostForSuccessfulSSHConnection(request: request)
+            }
             await MainActor.run {
                 self.sshConnectTask = nil
                 if didConnect {
@@ -504,6 +509,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
     func applyHostPreset(_ preset: TermiusHostPreset, autoConnect: Bool) {
         modeControl.selectedSegmentIndex = Mode.ssh.rawValue
         applyModeUI()
+        selectedSSHHostPreset = preset
 
         sshHostField.text = preset.host
         sshPortField.text = String(preset.port)
@@ -598,88 +604,58 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate {
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         present(alert, animated: true)
     }
+
+    private func persistRecentHostForSuccessfulSSHConnection(request: PhaseZeroSSHConnectionRequest) async {
+        let preset = selectedSSHHostPreset
+
+        let title: String
+        let subtitle: String
+        let vaultName: String
+
+        if let preset,
+           preset.host.caseInsensitiveCompare(request.host) == .orderedSame,
+           preset.port == request.port,
+           preset.username.caseInsensitiveCompare(request.username) == .orderedSame {
+            title = preset.title
+            subtitle = preset.subtitle
+            vaultName = preset.vaultName
+        } else {
+            title = request.host
+            subtitle = "Manual SSH host"
+            vaultName = "Personal"
+        }
+
+        await AppEnvironment.hostCatalog.recordConnection(
+            host: request.host,
+            port: request.port,
+            username: request.username,
+            title: title,
+            subtitle: subtitle,
+            vaultName: vaultName
+        )
+    }
 }
 
 struct TermiusHostPreset: Sendable, Equatable {
+    let id: HostRecordID
     let vaultName: String
     let title: String
     let subtitle: String
     let host: String
     let port: Int
     let username: String
-}
+    let isFavorite: Bool
 
-private struct TermiusVaultSection {
-    let title: String
-    let hosts: [TermiusHostPreset]
-}
-
-private enum TermiusVaultCatalog {
-    static let sections: [TermiusVaultSection] = [
-        TermiusVaultSection(
-            title: "Production",
-            hosts: [
-                TermiusHostPreset(
-                    vaultName: "Production",
-                    title: "web-eu-01",
-                    subtitle: "Nginx + API",
-                    host: "web-eu-01.internal",
-                    port: 22,
-                    username: "ops"
-                ),
-                TermiusHostPreset(
-                    vaultName: "Production",
-                    title: "db-eu-01",
-                    subtitle: "PostgreSQL Primary",
-                    host: "db-eu-01.internal",
-                    port: 22,
-                    username: "dba"
-                )
-            ]
-        ),
-        TermiusVaultSection(
-            title: "Staging",
-            hosts: [
-                TermiusHostPreset(
-                    vaultName: "Staging",
-                    title: "stage-web-01",
-                    subtitle: "Integration Tests",
-                    host: "stage-web-01.internal",
-                    port: 22,
-                    username: "qa"
-                ),
-                TermiusHostPreset(
-                    vaultName: "Staging",
-                    title: "stage-bastion",
-                    subtitle: "Jump Host",
-                    host: "stage-bastion.internal",
-                    port: 22,
-                    username: "qa"
-                )
-            ]
-        ),
-        TermiusVaultSection(
-            title: "Lab",
-            hosts: [
-                TermiusHostPreset(
-                    vaultName: "Lab",
-                    title: "raspi-k3s",
-                    subtitle: "Edge Cluster Node",
-                    host: "raspi-k3s.local",
-                    port: 22,
-                    username: "pi"
-                ),
-                TermiusHostPreset(
-                    vaultName: "Lab",
-                    title: "nas-storage",
-                    subtitle: "Backups",
-                    host: "nas-storage.local",
-                    port: 22,
-                    username: "backup"
-                )
-            ]
-        )
-    ]
+    init(record: SavedHostRecord) {
+        id = record.id
+        vaultName = record.vaultName
+        title = record.title
+        subtitle = record.subtitle
+        host = record.host
+        port = record.port
+        username = record.username
+        isFavorite = record.isFavorite
+    }
 }
 
 @MainActor
@@ -737,15 +713,30 @@ final class TermiusRootTabBarController: UITabBarController {
 @MainActor
 final class VaultsHomeViewController: UITableViewController {
     var onHostSelection: ((TermiusHostPreset, Bool) -> Void)?
-
-    private let sections = TermiusVaultCatalog.sections
+    private var sections: [HostCatalogSection] = []
 
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Vaults"
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "HostCell")
         tableView.rowHeight = 66
         tableView.backgroundColor = UIColor.systemBackground
+        reloadSections()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        reloadSections()
+    }
+
+    private func reloadSections() {
+        Task { [weak self] in
+            guard let self else { return }
+            let loadedSections = await AppEnvironment.hostCatalog.sections()
+            await MainActor.run {
+                self.sections = loadedSections
+                self.tableView.reloadData()
+            }
+        }
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -764,10 +755,11 @@ final class VaultsHomeViewController: UITableViewController {
         _ tableView: UITableView,
         cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        let preset = sections[indexPath.section].hosts[indexPath.row]
+        let record = sections[indexPath.section].hosts[indexPath.row]
+        let preset = TermiusHostPreset(record: record)
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: "HostCell")
         cell.accessoryType = .disclosureIndicator
-        cell.textLabel?.text = preset.title
+        cell.textLabel?.text = preset.isFavorite ? "★ \(preset.title)" : preset.title
         cell.textLabel?.font = .preferredFont(forTextStyle: .body)
         cell.detailTextLabel?.text = "\(preset.username)@\(preset.host):\(preset.port) • \(preset.subtitle)"
         cell.detailTextLabel?.textColor = .secondaryLabel
@@ -778,7 +770,8 @@ final class VaultsHomeViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
 
-        let preset = sections[indexPath.section].hosts[indexPath.row]
+        let record = sections[indexPath.section].hosts[indexPath.row]
+        let preset = TermiusHostPreset(record: record)
         let sheet = UIAlertController(
             title: preset.title,
             message: "\(preset.username)@\(preset.host):\(preset.port)",
@@ -790,6 +783,18 @@ final class VaultsHomeViewController: UITableViewController {
         })
         sheet.addAction(UIAlertAction(title: "Connect Now", style: .default) { [weak self] _ in
             self?.onHostSelection?(preset, true)
+        })
+        sheet.addAction(UIAlertAction(
+            title: preset.isFavorite ? "Remove From Favorites" : "Add To Favorites",
+            style: .default
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task {
+                _ = await AppEnvironment.hostCatalog.toggleFavorite(hostID: preset.id)
+                await MainActor.run {
+                    self.reloadSections()
+                }
+            }
         })
         sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
 

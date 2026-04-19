@@ -1,4 +1,5 @@
 import UIKit
+import PersistenceKit
 
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -8,6 +9,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         Task {
             await AppEnvironment.phaseZero.startIfNeeded()
+            await AppEnvironment.hostCatalog.startIfNeeded()
         }
         return true
     }
@@ -48,4 +50,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
 enum AppEnvironment {
     static let phaseZero = PhaseZeroCoordinator()
+    static let hostCatalog = HostCatalogStore(
+        persistence: UserDefaultsHostCatalogPersistence()
+    )
 }
