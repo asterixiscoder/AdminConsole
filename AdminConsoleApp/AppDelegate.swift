@@ -8,7 +8,6 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         Task {
-            await AppEnvironment.phaseZero.startIfNeeded()
             await AppEnvironment.hostCatalog.startIfNeeded()
         }
         return true
@@ -19,32 +18,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
-        switch connectingSceneSession.role {
-        case .windowExternalDisplayNonInteractive:
-            return UISceneConfiguration(
-                name: "External Desktop Configuration",
-                sessionRole: connectingSceneSession.role
-            )
-        case .windowApplication:
-            fallthrough
-        default:
-            return UISceneConfiguration(
-                name: "Phone Control Configuration",
-                sessionRole: connectingSceneSession.role
-            )
-        }
-    }
-
-    func applicationDidEnterBackground(_ application: UIApplication) {
-        Task {
-            await AppEnvironment.phaseZero.applicationDidEnterBackground()
-        }
-    }
-
-    func applicationWillEnterForeground(_ application: UIApplication) {
-        Task {
-            await AppEnvironment.phaseZero.applicationWillEnterForeground()
-        }
+        UISceneConfiguration(
+            name: "Phone Control Configuration",
+            sessionRole: connectingSceneSession.role
+        )
     }
 }
 

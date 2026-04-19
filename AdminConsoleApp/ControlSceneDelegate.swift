@@ -11,12 +11,7 @@ final class ControlSceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else {
             return
         }
-
-        Task {
-            await AppEnvironment.phaseZero.startIfNeeded()
-        }
-
-        let rootViewController = TermiusRootTabBarController()
+        let rootViewController = RebootRootTabBarController()
         let window = UIWindow(windowScene: windowScene)
         window.rootViewController = rootViewController
         window.makeKeyAndVisible()

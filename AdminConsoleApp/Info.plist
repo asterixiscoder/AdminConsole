@@ -20,10 +20,12 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>AdminConsole needs local network access to connect to SSH and VNC hosts in your LAN.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
-		<true/>
+		<false/>
 		<key>UISceneConfigurations</key>
 		<dict>
 			<key>UIWindowSceneSessionRoleApplication</key>
@@ -35,24 +37,17 @@
 					<string>$(PRODUCT_MODULE_NAME).ControlSceneDelegate</string>
 				</dict>
 			</array>
-			<key>UIWindowSceneSessionRoleExternalDisplay</key>
-			<array>
-				<dict>
-					<key>UISceneConfigurationName</key>
-					<string>External Desktop Configuration</string>
-					<key>UISceneDelegateClassName</key>
-					<string>$(PRODUCT_MODULE_NAME).DesktopSceneDelegate</string>
-				</dict>
-			</array>
 		</dict>
 	</dict>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
+		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
+		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 	</array>
 </dict>
