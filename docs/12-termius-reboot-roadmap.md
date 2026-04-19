@@ -86,3 +86,6 @@ Acceptance:
 - Mobile root switched to reboot flow.
 - Host persistence + favorites/recents implemented in reboot store.
 - External display disabled for baseline parity stabilization.
+- Added quick-connect behavior from favorites/recents in `Connections`.
+- Added host handoff (`Vault Host -> Connections`) with auto-prefill.
+- Reworked terminal state updates to multi-observer model (stable across screens).

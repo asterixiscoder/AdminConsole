@@ -3,6 +3,10 @@ import DesktopDomain
 import SSHKit
 import UIKit
 
+private extension Notification.Name {
+    static let rebootConnectHostRequested = Notification.Name("rebootConnectHostRequested")
+}
+
 struct RebootHost: Codable, Equatable, Identifiable {
     let id: UUID
     var vault: String
@@ -153,7 +157,7 @@ final class RebootAppModel {
             await self?.applyTerminalState(state)
         }
     }()
-    var onTerminalStateChanged: ((TerminalSurfaceState) -> Void)?
+    private var terminalObservers: [UUID: (TerminalSurfaceState) -> Void] = [:]
 
     init() {}
 
@@ -192,9 +196,23 @@ final class RebootAppModel {
         }
     }
 
+    @discardableResult
+    func addTerminalObserver(_ observer: @escaping (TerminalSurfaceState) -> Void) -> UUID {
+        let id = UUID()
+        terminalObservers[id] = observer
+        observer(terminalState)
+        return id
+    }
+
+    func removeTerminalObserver(id: UUID) {
+        terminalObservers.removeValue(forKey: id)
+    }
+
     private func applyTerminalState(_ state: TerminalSurfaceState) {
         terminalState = state
-        onTerminalStateChanged?(state)
+        for observer in terminalObservers.values {
+            observer(state)
+        }
     }
 }
 
@@ -257,7 +275,7 @@ final class RebootVaultsViewController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        tableView.reloadData()
+        reloadSections()
     }
 
     private func reloadSections() {
@@ -339,6 +357,11 @@ final class RebootHostDetailsViewController: UIViewController {
         openButton.configuration?.title = "Use In Connections"
         openButton.addTarget(self, action: #selector(openInConnections), for: .touchUpInside)
 
+        let connectButton = UIButton(type: .system)
+        connectButton.configuration = .filled()
+        connectButton.configuration?.title = "Connect Now"
+        connectButton.addTarget(self, action: #selector(connectNow), for: .touchUpInside)
+
         let favoriteButton = UIButton(type: .system)
         favoriteButton.configuration = .tinted()
         favoriteButton.configuration?.title = "Toggle Favorite"
@@ -355,7 +378,7 @@ final class RebootHostDetailsViewController: UIViewController {
         deleteButton.tintColor = .systemRed
         deleteButton.addTarget(self, action: #selector(deleteHost), for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [summaryLabel, openButton, favoriteButton, editButton, deleteButton])
+        let stack = UIStackView(arrangedSubviews: [summaryLabel, connectButton, openButton, favoriteButton, editButton, deleteButton])
         stack.axis = .vertical
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -391,8 +414,32 @@ final class RebootHostDetailsViewController: UIViewController {
 
     @objc
     private func openInConnections() {
+        NotificationCenter.default.post(
+            name: .rebootConnectHostRequested,
+            object: nil,
+            userInfo: ["hostID": hostID]
+        )
         guard let tabBar = tabBarController else { return }
         tabBar.selectedIndex = 1
+    }
+
+    @objc
+    private func connectNow() {
+        guard let host = model.hostStore.host(id: hostID) else { return }
+
+        let alert = UIAlertController(title: "Connect \(host.name)", message: "Enter SSH password", preferredStyle: .alert)
+        alert.addTextField { field in
+            field.placeholder = "Password"
+            field.isSecureTextEntry = true
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Connect", style: .default) { [weak self, weak alert] _ in
+            guard let self else { return }
+            let password = alert?.textFields?.first?.text ?? ""
+            self.model.connect(host: host, password: password)
+            self.navigationController?.pushViewController(RebootTerminalViewController(model: self.model), animated: true)
+        })
+        present(alert, animated: true)
     }
 
     @objc
@@ -540,11 +587,14 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
 final class RebootConnectionsViewController: UIViewController, UITextFieldDelegate {
     private let model: RebootAppModel
 
+    private let quickHostsCard = UIView()
+    private let quickHostsStack = UIStackView()
     private let hostField = UITextField()
     private let portField = UITextField()
     private let userField = UITextField()
     private let passwordField = UITextField()
     private let statusLabel = UILabel()
+    private var terminalObserverID: UUID?
 
     init(model: RebootAppModel) {
         self.model = model
@@ -560,6 +610,29 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         super.viewDidLoad()
         title = "Connections"
         view.backgroundColor = .systemBackground
+
+        quickHostsCard.backgroundColor = .secondarySystemBackground
+        quickHostsCard.layer.cornerRadius = 12
+        quickHostsCard.translatesAutoresizingMaskIntoConstraints = false
+
+        let quickTitle = UILabel()
+        quickTitle.text = "Quick Connect"
+        quickTitle.font = .preferredFont(forTextStyle: .headline)
+
+        quickHostsStack.axis = .vertical
+        quickHostsStack.spacing = 8
+
+        let quickCardStack = UIStackView(arrangedSubviews: [quickTitle, quickHostsStack])
+        quickCardStack.axis = .vertical
+        quickCardStack.spacing = 10
+        quickCardStack.translatesAutoresizingMaskIntoConstraints = false
+        quickHostsCard.addSubview(quickCardStack)
+        NSLayoutConstraint.activate([
+            quickCardStack.leadingAnchor.constraint(equalTo: quickHostsCard.leadingAnchor, constant: 12),
+            quickCardStack.trailingAnchor.constraint(equalTo: quickHostsCard.trailingAnchor, constant: -12),
+            quickCardStack.topAnchor.constraint(equalTo: quickHostsCard.topAnchor, constant: 12),
+            quickCardStack.bottomAnchor.constraint(equalTo: quickHostsCard.bottomAnchor, constant: -12)
+        ])
 
         [hostField, portField, userField, passwordField].forEach {
             $0.borderStyle = .roundedRect
@@ -596,7 +669,7 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         terminal.configuration?.title = "Open Terminal"
         terminal.addTarget(self, action: #selector(openTerminal), for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [hostField, portField, userField, passwordField, connect, disconnect, terminal, statusLabel])
+        let stack = UIStackView(arrangedSubviews: [quickHostsCard, hostField, portField, userField, passwordField, connect, disconnect, terminal, statusLabel])
         stack.axis = .vertical
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -608,9 +681,36 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
             stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
         ])
 
-        model.onTerminalStateChanged = { [weak self] state in
-            self?.statusLabel.text = "\(state.connectionTitle) • \(state.sessionState.rawValue.capitalized) • \(state.statusMessage)"
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleConnectHostNotification(_:)),
+            name: .rebootConnectHostRequested,
+            object: nil
+        )
+
+        reloadQuickHosts()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        reloadQuickHosts()
+        if terminalObserverID == nil {
+            terminalObserverID = model.addTerminalObserver { [weak self] state in
+                self?.statusLabel.text = "\(state.connectionTitle) • \(state.sessionState.rawValue.capitalized) • \(state.statusMessage)"
+            }
         }
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if let terminalObserverID {
+            model.removeTerminalObserver(id: terminalObserverID)
+            self.terminalObserverID = nil
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     @objc
@@ -621,8 +721,24 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         let port = Int((portField.text ?? "22").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 22
         guard !host.isEmpty, !user.isEmpty else { return }
 
-        let transient = RebootHost(vault: "Manual", name: host, note: "Manual session", hostname: host, port: port, username: user)
-        model.connect(host: transient, password: password)
+        if let selectedHost = model.hostStore.host(id: model.selectedHostID ?? UUID()),
+           selectedHost.hostname == host,
+           selectedHost.username == user,
+           selectedHost.port == port {
+            model.connect(host: selectedHost, password: password)
+            return
+        }
+
+        let saved = model.hostStore.hosts.first { candidate in
+            candidate.hostname == host && candidate.username == user && candidate.port == port
+        }
+
+        if let saved {
+            model.connect(host: saved, password: password)
+        } else {
+            let transient = RebootHost(vault: "Manual", name: host, note: "Manual session", hostname: host, port: port, username: user)
+            model.connect(host: transient, password: password)
+        }
     }
 
     @objc
@@ -639,6 +755,70 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         connectSSH()
         return true
     }
+
+    private func reloadQuickHosts() {
+        quickHostsStack.arrangedSubviews.forEach { view in
+            quickHostsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        let quickHosts = Array((model.hostStore.recentHosts() + model.hostStore.favorites()).reduce(into: [RebootHost]()) { partialResult, host in
+            if !partialResult.contains(where: { $0.id == host.id }) {
+                partialResult.append(host)
+            }
+        }.prefix(6))
+
+        if quickHosts.isEmpty {
+            let label = UILabel()
+            label.text = "No recent connections yet."
+            label.font = .preferredFont(forTextStyle: .subheadline)
+            label.textColor = .secondaryLabel
+            quickHostsStack.addArrangedSubview(label)
+            return
+        }
+
+        for host in quickHosts {
+            let button = UIButton(type: .system)
+            button.configuration = .tinted()
+            button.configuration?.title = "\(host.name)  \(host.username)@\(host.hostname):\(host.port)"
+            button.contentHorizontalAlignment = .leading
+            button.addAction(UIAction { [weak self] _ in
+                self?.prefill(host)
+                self?.promptPasswordAndConnect(host: host)
+            }, for: .touchUpInside)
+            quickHostsStack.addArrangedSubview(button)
+        }
+    }
+
+    private func prefill(_ host: RebootHost) {
+        model.selectedHostID = host.id
+        hostField.text = host.hostname
+        portField.text = String(host.port)
+        userField.text = host.username
+    }
+
+    private func promptPasswordAndConnect(host: RebootHost) {
+        let alert = UIAlertController(title: "Connect \(host.name)", message: "Enter SSH password", preferredStyle: .alert)
+        alert.addTextField { field in
+            field.placeholder = "Password"
+            field.isSecureTextEntry = true
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Connect", style: .default) { [weak self, weak alert] _ in
+            guard let self else { return }
+            let password = alert?.textFields?.first?.text ?? ""
+            self.passwordField.text = ""
+            self.model.connect(host: host, password: password)
+        })
+        present(alert, animated: true)
+    }
+
+    @objc
+    private func handleConnectHostNotification(_ notification: Notification) {
+        guard let hostID = notification.userInfo?["hostID"] as? UUID else { return }
+        guard let host = model.hostStore.host(id: hostID) else { return }
+        prefill(host)
+    }
 }
 
 @MainActor
@@ -646,6 +826,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     private let model: RebootAppModel
     private let outputView = UITextView()
     private let inputField = UITextField()
+    private var terminalObserverID: UUID?
 
     init(model: RebootAppModel) {
         self.model = model
@@ -692,9 +873,22 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
             outputView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300)
         ])
 
-        render(state: model.terminalState)
-        model.onTerminalStateChanged = { [weak self] state in
-            self?.render(state: state)
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        if terminalObserverID == nil {
+            terminalObserverID = model.addTerminalObserver { [weak self] state in
+                self?.render(state: state)
+            }
+        }
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if let terminalObserverID {
+            model.removeTerminalObserver(id: terminalObserverID)
+            self.terminalObserverID = nil
         }
     }
 
