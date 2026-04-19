@@ -163,6 +163,11 @@ public actor HostCatalogStore {
         return snapshot.hosts.sorted(by: hostSort)
     }
 
+    public func host(id: HostRecordID) async -> SavedHostRecord? {
+        await startIfNeeded()
+        return snapshot.hosts.first(where: { $0.id == id })
+    }
+
     public func sections() async -> [HostCatalogSection] {
         await startIfNeeded()
 
@@ -208,6 +213,97 @@ public actor HostCatalogStore {
         snapshot.hosts[index].isFavorite.toggle()
         try? await persistence.saveCatalog(snapshot)
         return snapshot.hosts[index]
+    }
+
+    @discardableResult
+    public func createHost(
+        vaultName: String,
+        title: String,
+        subtitle: String,
+        host: String,
+        port: Int,
+        username: String,
+        isFavorite: Bool
+    ) async -> SavedHostRecord? {
+        await startIfNeeded()
+
+        let normalized = normalizeHostFields(
+            vaultName: vaultName,
+            title: title,
+            subtitle: subtitle,
+            host: host,
+            port: port,
+            username: username
+        )
+        guard let normalized else {
+            return nil
+        }
+
+        let record = SavedHostRecord(
+            vaultName: normalized.vaultName,
+            title: normalized.title,
+            subtitle: normalized.subtitle,
+            host: normalized.host,
+            port: normalized.port,
+            username: normalized.username,
+            isFavorite: isFavorite,
+            lastConnectedAt: nil
+        )
+        snapshot.hosts.append(record)
+        try? await persistence.saveCatalog(snapshot)
+        return record
+    }
+
+    @discardableResult
+    public func updateHost(
+        id: HostRecordID,
+        vaultName: String,
+        title: String,
+        subtitle: String,
+        host: String,
+        port: Int,
+        username: String,
+        isFavorite: Bool
+    ) async -> SavedHostRecord? {
+        await startIfNeeded()
+        guard let index = snapshot.hosts.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+
+        let normalized = normalizeHostFields(
+            vaultName: vaultName,
+            title: title,
+            subtitle: subtitle,
+            host: host,
+            port: port,
+            username: username
+        )
+        guard let normalized else {
+            return nil
+        }
+
+        snapshot.hosts[index].vaultName = normalized.vaultName
+        snapshot.hosts[index].title = normalized.title
+        snapshot.hosts[index].subtitle = normalized.subtitle
+        snapshot.hosts[index].host = normalized.host
+        snapshot.hosts[index].port = normalized.port
+        snapshot.hosts[index].username = normalized.username
+        snapshot.hosts[index].isFavorite = isFavorite
+        try? await persistence.saveCatalog(snapshot)
+        return snapshot.hosts[index]
+    }
+
+    @discardableResult
+    public func deleteHost(id: HostRecordID) async -> Bool {
+        await startIfNeeded()
+        guard snapshot.hosts.contains(where: { $0.id == id }) else {
+            return false
+        }
+
+        snapshot.hosts.removeAll(where: { $0.id == id })
+        snapshot.recentHostIDs.removeAll(where: { $0 == id })
+        try? await persistence.saveCatalog(snapshot)
+        return true
     }
 
     public func recordConnection(
@@ -278,6 +374,45 @@ public actor HostCatalogStore {
         }
 
         return lhs.port < rhs.port
+    }
+
+    private func normalizeHostFields(
+        vaultName: String,
+        title: String,
+        subtitle: String,
+        host: String,
+        port: Int,
+        username: String
+    ) -> (
+        vaultName: String,
+        title: String,
+        subtitle: String,
+        host: String,
+        port: Int,
+        username: String
+    )? {
+        let normalizedVault = vaultName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedPort = max(1, port)
+
+        guard !normalizedVault.isEmpty,
+              !normalizedTitle.isEmpty,
+              !normalizedHost.isEmpty,
+              !normalizedUsername.isEmpty else {
+            return nil
+        }
+
+        return (
+            vaultName: normalizedVault,
+            title: normalizedTitle,
+            subtitle: normalizedSubtitle,
+            host: normalizedHost,
+            port: normalizedPort,
+            username: normalizedUsername
+        )
     }
 
     public static let defaultSeedHosts: [SavedHostRecord] = [

@@ -70,4 +70,42 @@ final class HostCatalogStoreTests: XCTestCase {
         XCTAssertEqual(favorites.first?.host, "edge.local")
         XCTAssertEqual(favorites.first?.isFavorite, true)
     }
+
+    func testCreateUpdateAndDeleteHostLifecycle() async throws {
+        let persistence = InMemoryHostCatalogPersistence()
+        let store = HostCatalogStore(persistence: persistence, seedHosts: [])
+
+        let created = await store.createHost(
+            vaultName: "Personal",
+            title: "new-host",
+            subtitle: "created",
+            host: "new.local",
+            port: 22,
+            username: "admin",
+            isFavorite: false
+        )
+        let createdRecord = try XCTUnwrap(created)
+        XCTAssertEqual(createdRecord.title, "new-host")
+
+        let updated = await store.updateHost(
+            id: createdRecord.id,
+            vaultName: "Production",
+            title: "new-host-renamed",
+            subtitle: "edited",
+            host: "new.internal",
+            port: 2202,
+            username: "root",
+            isFavorite: true
+        )
+        let updatedRecord = try XCTUnwrap(updated)
+        XCTAssertEqual(updatedRecord.vaultName, "Production")
+        XCTAssertEqual(updatedRecord.host, "new.internal")
+        XCTAssertEqual(updatedRecord.port, 2202)
+        XCTAssertEqual(updatedRecord.isFavorite, true)
+
+        let removed = await store.deleteHost(id: createdRecord.id)
+        XCTAssertTrue(removed)
+        let allHosts = await store.allHosts()
+        XCTAssertTrue(allHosts.isEmpty)
+    }
 }

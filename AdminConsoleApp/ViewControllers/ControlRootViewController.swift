@@ -718,6 +718,11 @@ final class VaultsHomeViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Vaults"
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .add,
+            target: self,
+            action: #selector(addHostTapped)
+        )
         tableView.rowHeight = 66
         tableView.backgroundColor = UIColor.systemBackground
         reloadSections()
@@ -772,39 +777,405 @@ final class VaultsHomeViewController: UITableViewController {
 
         let record = sections[indexPath.section].hosts[indexPath.row]
         let preset = TermiusHostPreset(record: record)
-        let sheet = UIAlertController(
-            title: preset.title,
-            message: "\(preset.username)@\(preset.host):\(preset.port)",
-            preferredStyle: .actionSheet
-        )
+        openHostDetails(for: preset)
+    }
 
-        sheet.addAction(UIAlertAction(title: "Open In Connections", style: .default) { [weak self] _ in
-            self?.onHostSelection?(preset, false)
-        })
-        sheet.addAction(UIAlertAction(title: "Connect Now", style: .default) { [weak self] _ in
-            self?.onHostSelection?(preset, true)
-        })
-        sheet.addAction(UIAlertAction(
-            title: preset.isFavorite ? "Remove From Favorites" : "Add To Favorites",
-            style: .default
-        ) { [weak self] _ in
+    @objc
+    private func addHostTapped() {
+        let editor = HostEditorViewController(mode: .create)
+        editor.onSaved = { [weak self] preset in
+            guard let self else { return }
+            self.reloadSections()
+            self.openHostDetails(for: preset)
+        }
+        navigationController?.pushViewController(editor, animated: true)
+    }
+
+    private func openHostDetails(for preset: TermiusHostPreset) {
+        let details = HostDetailsViewController(preset: preset)
+        details.onOpenInConnections = { [weak self] selectedPreset, autoConnect in
+            self?.onHostSelection?(selectedPreset, autoConnect)
+        }
+        details.onHostDeleted = { [weak self] in
+            self?.reloadSections()
+        }
+        details.onHostUpdated = { [weak self] _ in
+            self?.reloadSections()
+        }
+        navigationController?.pushViewController(details, animated: true)
+    }
+}
+
+enum HostEditorMode {
+    case create
+    case edit(TermiusHostPreset)
+}
+
+@MainActor
+final class HostEditorViewController: UIViewController, UITextFieldDelegate {
+    var onSaved: ((TermiusHostPreset) -> Void)?
+
+    private let mode: HostEditorMode
+    private let vaultField = UITextField()
+    private let titleField = UITextField()
+    private let subtitleField = UITextField()
+    private let hostField = UITextField()
+    private let portField = UITextField()
+    private let usernameField = UITextField()
+    private let favoriteSwitch = UISwitch()
+    private let statusLabel = UILabel()
+    private let saveButton = UIButton(type: .system)
+
+    init(mode: HostEditorMode) {
+        self.mode = mode
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        title = editorTitle
+        setupUI()
+        seedFieldsIfNeeded()
+    }
+
+    private var editorTitle: String {
+        switch mode {
+        case .create:
+            return "New Host"
+        case .edit:
+            return "Edit Host"
+        }
+    }
+
+    private func setupUI() {
+        [vaultField, titleField, subtitleField, hostField, portField, usernameField].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+            $0.borderStyle = .roundedRect
+            $0.autocapitalizationType = .none
+            $0.autocorrectionType = .no
+            $0.delegate = self
+        }
+
+        vaultField.placeholder = "Vault (e.g. Production)"
+        titleField.placeholder = "Title"
+        subtitleField.placeholder = "Subtitle (optional)"
+        hostField.placeholder = "Host"
+        portField.placeholder = "Port"
+        portField.keyboardType = .numberPad
+        usernameField.placeholder = "Username"
+
+        let favoriteLabel = UILabel()
+        favoriteLabel.text = "Favorite"
+        favoriteLabel.font = .preferredFont(forTextStyle: .body)
+
+        let favoriteRow = UIStackView(arrangedSubviews: [favoriteLabel, favoriteSwitch])
+        favoriteRow.axis = .horizontal
+        favoriteRow.distribution = .equalSpacing
+
+        statusLabel.font = .preferredFont(forTextStyle: .footnote)
+        statusLabel.textColor = .secondaryLabel
+        statusLabel.numberOfLines = 0
+        statusLabel.text = "Fill host details and save."
+
+        saveButton.configuration = .filled()
+        saveButton.configuration?.title = "Save Host"
+        saveButton.addTarget(self, action: #selector(saveTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [
+            vaultField,
+            titleField,
+            subtitleField,
+            hostField,
+            portField,
+            usernameField,
+            favoriteRow,
+            statusLabel,
+            saveButton
+        ])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .vertical
+        stack.spacing = 12
+
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
+        ])
+    }
+
+    private func seedFieldsIfNeeded() {
+        guard case .edit(let preset) = mode else {
+            portField.text = "22"
+            return
+        }
+
+        vaultField.text = preset.vaultName
+        titleField.text = preset.title
+        subtitleField.text = preset.subtitle
+        hostField.text = preset.host
+        portField.text = String(preset.port)
+        usernameField.text = preset.username
+        favoriteSwitch.isOn = preset.isFavorite
+    }
+
+    @objc
+    private func saveTapped() {
+        view.endEditing(true)
+
+        let vaultName = (vaultField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = (titleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let subtitle = (subtitleField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = (hostField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let username = (usernameField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let port = Int((portField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 22
+        let isFavorite = favoriteSwitch.isOn
+
+        guard !vaultName.isEmpty, !title.isEmpty, !host.isEmpty, !username.isEmpty else {
+            statusLabel.text = "Vault, title, host and username are required."
+            statusLabel.textColor = .systemRed
+            return
+        }
+
+        saveButton.isEnabled = false
+        statusLabel.text = "Saving host..."
+        statusLabel.textColor = .secondaryLabel
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            let savedRecord: SavedHostRecord?
+            switch self.mode {
+            case .create:
+                savedRecord = await AppEnvironment.hostCatalog.createHost(
+                    vaultName: vaultName,
+                    title: title,
+                    subtitle: subtitle,
+                    host: host,
+                    port: port,
+                    username: username,
+                    isFavorite: isFavorite
+                )
+            case .edit(let preset):
+                savedRecord = await AppEnvironment.hostCatalog.updateHost(
+                    id: preset.id,
+                    vaultName: vaultName,
+                    title: title,
+                    subtitle: subtitle,
+                    host: host,
+                    port: port,
+                    username: username,
+                    isFavorite: isFavorite
+                )
+            }
+
+            await MainActor.run {
+                self.saveButton.isEnabled = true
+
+                guard let savedRecord else {
+                    self.statusLabel.text = "Unable to save host. Verify all required fields."
+                    self.statusLabel.textColor = .systemRed
+                    return
+                }
+
+                self.onSaved?(TermiusHostPreset(record: savedRecord))
+                self.navigationController?.popViewController(animated: true)
+            }
+        }
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        saveTapped()
+        return true
+    }
+}
+
+@MainActor
+final class HostDetailsViewController: UIViewController {
+    var onOpenInConnections: ((TermiusHostPreset, Bool) -> Void)?
+    var onHostDeleted: (() -> Void)?
+    var onHostUpdated: ((TermiusHostPreset) -> Void)?
+
+    private var preset: TermiusHostPreset
+    private let summaryLabel = UILabel()
+    private let vaultLabel = UILabel()
+    private let statusLabel = UILabel()
+    private let favoriteButton = UIButton(type: .system)
+
+    init(preset: TermiusHostPreset) {
+        self.preset = preset
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        title = "Host Details"
+        setupUI()
+        render()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refreshFromStore()
+    }
+
+    private func setupUI() {
+        summaryLabel.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
+        summaryLabel.numberOfLines = 0
+        summaryLabel.textColor = .label
+
+        vaultLabel.font = .preferredFont(forTextStyle: .subheadline)
+        vaultLabel.numberOfLines = 0
+        vaultLabel.textColor = .secondaryLabel
+
+        statusLabel.font = .preferredFont(forTextStyle: .footnote)
+        statusLabel.numberOfLines = 0
+        statusLabel.textColor = .secondaryLabel
+
+        let openButton = UIButton(type: .system)
+        openButton.configuration = .filled()
+        openButton.configuration?.title = "Open In Connections"
+        openButton.addTarget(self, action: #selector(openInConnectionsTapped), for: .touchUpInside)
+
+        let connectNowButton = UIButton(type: .system)
+        connectNowButton.configuration = .tinted()
+        connectNowButton.configuration?.title = "Connect Now"
+        connectNowButton.addTarget(self, action: #selector(connectNowTapped), for: .touchUpInside)
+
+        favoriteButton.configuration = .gray()
+        favoriteButton.addTarget(self, action: #selector(toggleFavoriteTapped), for: .touchUpInside)
+
+        let editButton = UIButton(type: .system)
+        editButton.configuration = .plain()
+        editButton.configuration?.title = "Edit Host"
+        editButton.addTarget(self, action: #selector(editTapped), for: .touchUpInside)
+
+        let deleteButton = UIButton(type: .system)
+        deleteButton.configuration = .plain()
+        deleteButton.configuration?.title = "Delete Host"
+        deleteButton.tintColor = .systemRed
+        deleteButton.addTarget(self, action: #selector(deleteTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [
+            summaryLabel,
+            vaultLabel,
+            statusLabel,
+            openButton,
+            connectNowButton,
+            favoriteButton,
+            editButton,
+            deleteButton
+        ])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .vertical
+        stack.spacing = 12
+
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
+        ])
+    }
+
+    private func render() {
+        summaryLabel.text = """
+        \(preset.title)
+        \(preset.username)@\(preset.host):\(preset.port)
+        """
+        vaultLabel.text = "Vault: \(preset.vaultName) • \(preset.subtitle)"
+        favoriteButton.configuration?.title = preset.isFavorite ? "Remove From Favorites" : "Add To Favorites"
+        statusLabel.text = "Host id: \(preset.id.rawValue.uuidString)"
+    }
+
+    private func refreshFromStore() {
+        Task { [weak self] in
+            guard let self else { return }
+            guard let refreshed = await AppEnvironment.hostCatalog.host(id: self.preset.id) else {
+                await MainActor.run {
+                    self.statusLabel.text = "Host was removed."
+                    self.statusLabel.textColor = .systemRed
+                }
+                return
+            }
+
+            await MainActor.run {
+                self.preset = TermiusHostPreset(record: refreshed)
+                self.render()
+            }
+        }
+    }
+
+    @objc
+    private func openInConnectionsTapped() {
+        onOpenInConnections?(preset, false)
+    }
+
+    @objc
+    private func connectNowTapped() {
+        onOpenInConnections?(preset, true)
+    }
+
+    @objc
+    private func toggleFavoriteTapped() {
+        Task { [weak self] in
+            guard let self else { return }
+            guard let updated = await AppEnvironment.hostCatalog.toggleFavorite(hostID: self.preset.id) else {
+                return
+            }
+            await MainActor.run {
+                self.preset = TermiusHostPreset(record: updated)
+                self.render()
+                self.onHostUpdated?(self.preset)
+            }
+        }
+    }
+
+    @objc
+    private func editTapped() {
+        let editor = HostEditorViewController(mode: .edit(preset))
+        editor.onSaved = { [weak self] updatedPreset in
+            guard let self else { return }
+            self.preset = updatedPreset
+            self.render()
+            self.onHostUpdated?(updatedPreset)
+        }
+        navigationController?.pushViewController(editor, animated: true)
+    }
+
+    @objc
+    private func deleteTapped() {
+        let alert = UIAlertController(
+            title: "Delete Host?",
+            message: "This host will be removed from vaults, favorites, and recents.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
             guard let self else { return }
             Task {
-                _ = await AppEnvironment.hostCatalog.toggleFavorite(hostID: preset.id)
+                let deleted = await AppEnvironment.hostCatalog.deleteHost(id: self.preset.id)
                 await MainActor.run {
-                    self.reloadSections()
+                    if deleted {
+                        self.onHostDeleted?()
+                        self.navigationController?.popViewController(animated: true)
+                    }
                 }
             }
         })
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-
-        if let popover = sheet.popoverPresentationController,
-           let cell = tableView.cellForRow(at: indexPath) {
-            popover.sourceView = cell
-            popover.sourceRect = cell.bounds
-        }
-
-        present(sheet, animated: true)
+        present(alert, animated: true)
     }
 }
 
