@@ -400,10 +400,11 @@ public actor PhaseZeroCoordinator {
         _ = await bootstrap.store.dispatch(.noteInput(description))
     }
 
-    public func connectFocusedTerminal(using request: PhaseZeroSSHConnectionRequest) async {
+    @discardableResult
+    public func connectFocusedTerminal(using request: PhaseZeroSSHConnectionRequest) async -> Bool {
         guard !request.host.isEmpty, !request.username.isEmpty else {
             await registerControlInput("SSH connect skipped: host or username missing")
-            return
+            return false
         }
 
         let windowID: WindowID
@@ -414,12 +415,12 @@ public actor PhaseZeroCoordinator {
             windowID = opened
         } else {
             await registerControlInput("SSH connect failed: unable to create terminal window")
-            return
+            return false
         }
 
         guard let runtime = await terminalRuntime(for: windowID) else {
             await registerControlInput("SSH connect failed: runtime unavailable")
-            return
+            return false
         }
 
         do {
@@ -435,12 +436,15 @@ public actor PhaseZeroCoordinator {
                     for: request.credentialIdentity
                 )
             }
+
+            return didConnect
         } catch {
             await runtime.presentLocalFailure(
                 connectionTitle: request.connectionSummary,
                 message: error.localizedDescription
             )
             await registerControlInput("SSH connect failed: \(error.localizedDescription)")
+            return false
         }
     }
 

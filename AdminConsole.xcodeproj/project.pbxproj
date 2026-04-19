@@ -17,6 +17,7 @@
 		A1B2C3D4E5F6000000000067 /* AdminConsoleUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000012 /* AdminConsoleUITestsLaunchTests.swift */; };
 		A1B2C3D4E5F600000000006A /* PhaseZeroBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000016 /* PhaseZeroBridge.swift */; };
 		A1B2C3D4E5F6000000000078 /* TerminalSelectionGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */; };
+		A1B2C3D4E5F6000000000079 /* SSHTerminalSessionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000018 /* SSHTerminalSessionViewController.swift */; };
 		A1B2C3D4E5F600000000006B /* ConnectionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000080 /* ConnectionKit */; };
 		A1B2C3D4E5F600000000006C /* DesktopCompositor in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000081 /* DesktopCompositor */; };
 		A1B2C3D4E5F600000000006D /* DesktopDomain in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000082 /* DesktopDomain */; };
@@ -65,6 +66,7 @@
 		A1B2C3D4E5F6000000000015 /* AdminConsoleUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AdminConsoleUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D4E5F6000000000016 /* PhaseZeroBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhaseZeroBridge.swift; path = ../Packages/AppModules/Sources/AppPlatform/AdminConsoleBootstrap.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TerminalSelectionGeometry.swift; path = ../Packages/AppModules/Sources/AppPlatform/TerminalSelectionGeometry.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000018 /* SSHTerminalSessionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTerminalSessionViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -145,6 +147,7 @@
 			children = (
 				A1B2C3D4E5F600000000000E /* ControlRootViewController.swift */,
 				A1B2C3D4E5F600000000000F /* DesktopRootViewController.swift */,
+				A1B2C3D4E5F6000000000018 /* SSHTerminalSessionViewController.swift */,
 			);
 			path = ViewControllers;
 			sourceTree = "<group>";
@@ -333,6 +336,7 @@
 				A1B2C3D4E5F6000000000078 /* TerminalSelectionGeometry.swift in Sources */,
 				A1B2C3D4E5F6000000000063 /* ControlRootViewController.swift in Sources */,
 				A1B2C3D4E5F6000000000064 /* DesktopRootViewController.swift in Sources */,
+				A1B2C3D4E5F6000000000079 /* SSHTerminalSessionViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

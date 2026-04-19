@@ -5,9 +5,19 @@ import InputKit
 
 @MainActor
 final class ControlRootViewController: UIViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIGestureRecognizerDelegate {
+    private enum FlowStep: Int {
+        case mode = 0
+        case connect = 1
+        case session = 2
+    }
+
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
     private let workModeControl = UISegmentedControl(items: ["SSH", "VNC", "Browser"])
+    private let flowStepControl = UISegmentedControl(items: ["1. Mode", "2. Connect", "3. Session"])
+    private let flowHintLabel = UILabel()
+    private let flowBackButton = UIButton(type: .system)
+    private let flowNextButton = UIButton(type: .system)
     private let summaryLabel = UILabel()
     private let statusLabel = UILabel()
     private let focusedLabel = UILabel()
@@ -17,6 +27,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private let inputCaptureControl = UISegmentedControl(items: ["Auto", "Terminal", "VNC"])
     private let terminalStatusLabel = UILabel()
     private let terminalPreviewView = UITextView()
+    private let terminalCommandLogLabel = UILabel()
     private let browserStatusLabel = UILabel()
     private let browserPreviewView = UITextView()
     private let filesStatusLabel = UILabel()
@@ -67,11 +78,18 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private var isMiniDockCollapsed = false
     private var updatesTask: Task<Void, Never>?
     private var latestSnapshot: PhaseZeroSnapshot?
+    private var terminalCommandLogEntries: [String] = []
     private var isAwaitingFilesExport = false
+    private var currentFlowStep: FlowStep = .mode
+    private weak var infoCardView: UIView?
     private var sshCardView: UIView?
     private var vncCardView: UIView?
     private var browserCardView: UIView?
     private var filesCardView: UIView?
+    private weak var sshConnectSectionView: UIView?
+    private weak var sshSessionSectionView: UIView?
+    private weak var vncConnectSectionView: UIView?
+    private weak var vncSessionSectionView: UIView?
 
     override var canBecomeFirstResponder: Bool {
         true
@@ -83,21 +101,28 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         title = "AdminConsole"
         view.backgroundColor = .systemBackground
         navigationItem.largeTitleDisplayMode = .always
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "Browser Spike",
-            style: .plain,
-            target: self,
-            action: #selector(openBrowserPrototype)
-        )
-
-        summaryLabel.text = "iPhone control scene for cursor, focus, shortcuts, terminal orchestration, and SSH input."
+        summaryLabel.text = "Управление подключениями SSH и VNC с iPhone. Активная сессия зеркалируется на внешний монитор."
         summaryLabel.font = .preferredFont(forTextStyle: .title3)
         summaryLabel.numberOfLines = 0
 
         workModeControl.selectedSegmentIndex = 0
         workModeControl.addTarget(self, action: #selector(workModeChanged), for: .valueChanged)
+        flowStepControl.selectedSegmentIndex = currentFlowStep.rawValue
+        flowStepControl.addTarget(self, action: #selector(flowStepChanged), for: .valueChanged)
 
-        [statusLabel, focusedLabel, cursorLabel, inputLabel, inputCaptureStatusLabel, terminalStatusLabel, browserStatusLabel, filesStatusLabel, vncStatusLabel, displayStatusLabel, softModifierStatusLabel].forEach { label in
+        flowHintLabel.font = .preferredFont(forTextStyle: .subheadline)
+        flowHintLabel.textColor = .secondaryLabel
+        flowHintLabel.numberOfLines = 0
+
+        flowBackButton.configuration = .plain()
+        flowBackButton.configuration?.title = "Back"
+        flowBackButton.addTarget(self, action: #selector(flowBackTapped), for: .touchUpInside)
+
+        flowNextButton.configuration = .filled()
+        flowNextButton.configuration?.title = "Next"
+        flowNextButton.addTarget(self, action: #selector(flowNextTapped), for: .touchUpInside)
+
+        [statusLabel, focusedLabel, inputLabel, terminalStatusLabel, vncStatusLabel, displayStatusLabel].forEach { label in
             label.font = .preferredFont(forTextStyle: .body)
             label.numberOfLines = 0
         }
@@ -111,7 +136,15 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         terminalPreviewView.isScrollEnabled = true
         terminalPreviewView.textContainerInset = .zero
         terminalPreviewView.textContainer.lineFragmentPadding = 0
-        terminalPreviewView.heightAnchor.constraint(equalToConstant: 180).isActive = true
+        terminalPreviewView.heightAnchor.constraint(equalToConstant: 340).isActive = true
+        terminalPreviewView.layer.cornerRadius = 12
+        terminalPreviewView.layer.borderWidth = 1
+        terminalPreviewView.layer.borderColor = UIColor.separator.cgColor
+
+        terminalCommandLogLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        terminalCommandLogLabel.textColor = .secondaryLabel
+        terminalCommandLogLabel.numberOfLines = 0
+        terminalCommandLogLabel.text = "No commands sent yet."
 
         browserPreviewView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         browserPreviewView.textColor = .secondaryLabel
@@ -149,70 +182,31 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         filesEntriesStack.axis = .vertical
         filesEntriesStack.spacing = 8
 
-        keyboardHintLabel.text = """
-        Keyboard prototype
-        Cmd+1 Terminal
-        Cmd+2 Files
-        Cmd+3 Browser
-        Cmd+4 VNC
-        Cmd+5 Capture Auto
-        Cmd+6 Capture Terminal
-        Cmd+7 Capture VNC
-        Cmd+M Toggle fullscreen focused window
-        Cmd+V Paste clipboard to terminal
-        Arrow keys move cursor unless terminal or VNC focus is active
-        Soft keyboard dock presets: Terminal / VNC
-        Ctrl/Alt are latched modifiers, Enter/Backspace and arrows support hold-to-repeat
-        Drag mode keeps the primary VNC mouse button pressed while you move
-        """
-        keyboardHintLabel.font = .preferredFont(forTextStyle: .footnote)
-        keyboardHintLabel.numberOfLines = 0
-
-        trackpadView.translatesAutoresizingMaskIntoConstraints = false
-        trackpadView.backgroundColor = UIColor.secondarySystemBackground
-        trackpadView.layer.cornerRadius = 22
-        trackpadView.layer.borderWidth = 1
-        trackpadView.layer.borderColor = UIColor.separator.cgColor
-
-        trackpadCursor.translatesAutoresizingMaskIntoConstraints = false
-        trackpadCursor.backgroundColor = .systemBlue
-        trackpadCursor.layer.cornerRadius = 10
-        trackpadCursor.layer.shadowColor = UIColor.systemBlue.cgColor
-        trackpadCursor.layer.shadowOpacity = 0.3
-        trackpadCursor.layer.shadowRadius = 8
-        trackpadView.addSubview(trackpadCursor)
-        setupTrackpadMiniDock()
-
         let infoCard = makeCard(
             arrangedSubviews: [
                 workModeControl,
+                flowStepControl,
+                flowHintLabel,
+                makeFlowNavigationRow(),
                 summaryLabel,
                 statusLabel,
+                displayStatusLabel,
                 focusedLabel,
-                cursorLabel,
-                inputLabel,
-                terminalStatusLabel,
-                terminalPreviewView
+                inputLabel
             ]
         )
-        let trackpadCard = makeCard(arrangedSubviews: [trackpadView, makeSoftKeyboardControls(), keyboardHintLabel])
-        let actionsCard = makeCard(arrangedSubviews: [makeButtonsRow()])
-        let displayCard = makeCard(arrangedSubviews: [makeDisplayControls()])
+        infoCardView = infoCard
         let sshCard = makeCard(arrangedSubviews: [makeSSHControls()])
-        let browserCard = makeCard(arrangedSubviews: [makeBrowserControls()])
-        let filesCard = makeCard(arrangedSubviews: [makeFilesControls()])
         let vncCard = makeCard(arrangedSubviews: [makeVNCControls()])
         sshCardView = sshCard
         vncCardView = vncCard
-        browserCardView = browserCard
-        filesCardView = filesCard
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.axis = .vertical
         stackView.spacing = 18
 
-        [infoCard, trackpadCard, actionsCard, displayCard, sshCard, browserCard, filesCard, vncCard].forEach(stackView.addArrangedSubview)
+        [infoCard, sshCard, vncCard].forEach(stackView.addArrangedSubview)
         scrollView.addSubview(stackView)
         view.addSubview(scrollView)
 
@@ -226,24 +220,9 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             stackView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -20),
             stackView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 20),
             stackView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -20),
-            stackView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -40),
-
-            trackpadView.heightAnchor.constraint(equalToConstant: 220)
+            stackView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -40)
         ])
-
-        trackpadCursor.translatesAutoresizingMaskIntoConstraints = true
-        trackpadCursor.frame = CGRect(x: 14, y: 14, width: 20, height: 20)
-
-        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handleTrackpadPan(_:)))
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTrackpadTap))
-        panGesture.delegate = self
-        tapGesture.delegate = self
-        panGesture.cancelsTouchesInView = false
-        tapGesture.cancelsTouchesInView = false
-        trackpadView.addGestureRecognizer(panGesture)
-        trackpadView.addGestureRecognizer(tapGesture)
-
-        updateSoftModifierUI()
+        applyFlowStepUI(for: .ssh)
         startUpdates()
     }
 
@@ -340,8 +319,6 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
     private func apply(snapshot: PhaseZeroSnapshot) {
         syncDisplayFieldsIfNeeded(snapshot: snapshot)
-        syncInputCaptureControlsIfNeeded(snapshot: snapshot)
-        syncSoftKeyboardPresetIfNeeded(snapshot: snapshot)
         syncWorkModeControlIfNeeded(snapshot: snapshot)
         applyVisibleCards(for: snapshot.activeWorkMode)
         statusLabel.text = """
@@ -362,22 +339,15 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             focusedLabel.text = "Focused window: none"
         }
 
-        inputCaptureStatusLabel.text = inputCaptureStatusText(snapshot: snapshot)
-        cursorLabel.text = "Cursor: x \(String(format: "%.2f", snapshot.cursor.x)), y \(String(format: "%.2f", snapshot.cursor.y))"
-        inputLabel.text = "Last input: \(snapshot.lastInputDescription)"
+        if snapshot.isExternalDisplayConnected {
+            inputLabel.text = "Mirrored to external display: \(mirroredTargetText(snapshot: snapshot))"
+        } else {
+            inputLabel.text = "Phone-only mode: full control on iPhone. Active surface: \(mirroredTargetText(snapshot: snapshot))"
+        }
         terminalStatusLabel.text = terminalStatusText(snapshot: snapshot)
         terminalPreviewView.text = terminalPreview(snapshot: snapshot)
-        browserStatusLabel.text = browserStatusText(snapshot: snapshot)
-        browserPreviewView.text = browserPreview(snapshot: snapshot)
-        filesStatusLabel.text = filesStatusText(snapshot: snapshot)
-        filesPreviewView.text = filesPreview(snapshot: snapshot)
         vncStatusLabel.text = vncStatusText(snapshot: snapshot)
         vncPreviewView.text = vncPreview(snapshot: snapshot)
-        refreshFilesEntries(snapshot: snapshot)
-        updateVNCDragButton(snapshot: snapshot)
-
-        applyTrackpadCursor(snapshot: snapshot)
-        updateSoftModifierUI()
     }
 
     private func syncDisplayFieldsIfNeeded(snapshot: PhaseZeroSnapshot) {
@@ -442,10 +412,62 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     }
 
     private func applyVisibleCards(for mode: PhaseZeroWorkMode) {
-        sshCardView?.isHidden = mode != .ssh
-        vncCardView?.isHidden = mode != .vnc
-        browserCardView?.isHidden = mode != .browser
+        applyFlowStepUI(for: mode)
+        browserCardView?.isHidden = true
         filesCardView?.isHidden = true
+    }
+
+    private func applyFlowStepUI(for mode: PhaseZeroWorkMode) {
+        flowStepControl.selectedSegmentIndex = currentFlowStep.rawValue
+        flowBackButton.isEnabled = currentFlowStep.rawValue > FlowStep.mode.rawValue
+        flowNextButton.isEnabled = currentFlowStep.rawValue < FlowStep.session.rawValue
+
+        let supportsConnectionFlow = (mode == .ssh || mode == .vnc)
+        if !supportsConnectionFlow {
+            currentFlowStep = .mode
+            flowStepControl.selectedSegmentIndex = currentFlowStep.rawValue
+            flowBackButton.isEnabled = false
+            flowNextButton.isEnabled = false
+        }
+
+        let isSSH = mode == .ssh
+        let isVNC = mode == .vnc
+        let showConnectionStep = currentFlowStep == .connect
+        let showSessionStep = currentFlowStep == .session
+
+        sshCardView?.isHidden = !isSSH || currentFlowStep == .mode
+        vncCardView?.isHidden = !isVNC || currentFlowStep == .mode
+
+        sshConnectSectionView?.isHidden = !isSSH || !showConnectionStep
+        sshSessionSectionView?.isHidden = !isSSH || !showSessionStep
+        vncConnectSectionView?.isHidden = !isVNC || !showConnectionStep
+        vncSessionSectionView?.isHidden = !isVNC || !showSessionStep
+
+        switch (mode, currentFlowStep) {
+        case (_, .mode):
+            flowHintLabel.text = "Шаг 1: выберите режим работы (SSH, VNC или Browser)."
+        case (.ssh, .connect):
+            flowHintLabel.text = "Шаг 2: введите параметры SSH и нажмите Connect SSH."
+        case (.vnc, .connect):
+            flowHintLabel.text = "Шаг 2: введите параметры VNC и нажмите Connect VNC."
+        case (.ssh, .session):
+            flowHintLabel.text = "Шаг 3: работа с активной SSH-сессией. Этот экран зеркалируется на внешний монитор."
+        case (.vnc, .session):
+            flowHintLabel.text = "Шаг 3: работа с активной VNC-сессией. Этот экран зеркалируется на внешний монитор."
+        case (.browser, _):
+            flowHintLabel.text = "Для Browser сейчас доступно только зеркалирование активного окна на внешний монитор."
+        }
+    }
+
+    private func currentWorkMode() -> PhaseZeroWorkMode {
+        switch workModeControl.selectedSegmentIndex {
+        case 1:
+            return .vnc
+        case 2:
+            return .browser
+        default:
+            return .ssh
+        }
     }
 
     private func applyTrackpadCursor(snapshot: PhaseZeroSnapshot) {
@@ -553,6 +575,14 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchCancel)
         button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchDragExit)
         return button
+    }
+
+    private func makeFlowNavigationRow() -> UIView {
+        let row = UIStackView(arrangedSubviews: [flowBackButton, flowNextButton])
+        row.axis = .horizontal
+        row.spacing = 8
+        row.distribution = .fillEqually
+        return row
     }
 
     private func makeCard(arrangedSubviews: [UIView]) -> UIView {
@@ -838,7 +868,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         let titleLabel = UILabel()
         titleLabel.font = .preferredFont(forTextStyle: .headline)
         titleLabel.numberOfLines = 0
-        titleLabel.text = "SSH Terminal"
+        titleLabel.text = "SSH Connection"
 
         configureField(hostField, placeholder: "Host", textContentType: .URL)
         configureField(portField, placeholder: "Port", keyboardType: .numberPad)
@@ -846,58 +876,119 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         configureField(usernameField, placeholder: "Username", textContentType: .username)
         configureField(passwordField, placeholder: "Password (optional if saved)", textContentType: .password)
         passwordField.isSecureTextEntry = true
-        configureField(commandField, placeholder: "Command to send to focused terminal")
+        configureField(commandField, placeholder: "Terminal input")
         commandField.returnKeyType = .send
 
         let connectButton = UIButton(type: .system)
         connectButton.configuration = .filled()
-        connectButton.configuration?.title = "Connect Focused Terminal"
+        connectButton.configuration?.title = "Connect SSH"
         connectButton.addTarget(self, action: #selector(connectSSH), for: .touchUpInside)
 
+        let sendRow = UIStackView()
+        sendRow.axis = .horizontal
+        sendRow.spacing = 8
+        sendRow.distribution = .fillEqually
+
         let sendButton = UIButton(type: .system)
-        sendButton.configuration = .tinted()
-        sendButton.configuration?.title = "Send Command"
+        sendButton.configuration = .filled()
+        sendButton.configuration?.title = "Send"
         sendButton.addTarget(self, action: #selector(sendCommandToTerminal), for: .touchUpInside)
+
+        let sendLineButton = UIButton(type: .system)
+        sendLineButton.configuration = .tinted()
+        sendLineButton.configuration?.title = "Send + Enter"
+        sendLineButton.addTarget(self, action: #selector(sendCommandLineToTerminal), for: .touchUpInside)
+
+        [sendButton, sendLineButton].forEach(sendRow.addArrangedSubview)
+
+        let openTerminalSessionButton = UIButton(type: .system)
+        openTerminalSessionButton.configuration = .filled()
+        openTerminalSessionButton.configuration?.title = "Open Full SSH Session"
+        openTerminalSessionButton.addTarget(self, action: #selector(openFullSSHSession), for: .touchUpInside)
+
+        let terminalActionsRow = UIStackView()
+        terminalActionsRow.axis = .horizontal
+        terminalActionsRow.spacing = 8
+        terminalActionsRow.distribution = .fillEqually
+
+        let pasteClipboardButton = UIButton(type: .system)
+        pasteClipboardButton.configuration = .plain()
+        pasteClipboardButton.configuration?.title = "Paste"
+        pasteClipboardButton.addTarget(self, action: #selector(pasteClipboardToTerminal), for: .touchUpInside)
 
         let copyVisibleButton = UIButton(type: .system)
         copyVisibleButton.configuration = .plain()
-        copyVisibleButton.configuration?.title = "Copy Visible Screen"
+        copyVisibleButton.configuration?.title = "Copy Screen"
         copyVisibleButton.addTarget(self, action: #selector(copyVisibleTerminalScreen), for: .touchUpInside)
 
         let copyTranscriptButton = UIButton(type: .system)
         copyTranscriptButton.configuration = .plain()
-        copyTranscriptButton.configuration?.title = "Copy Full Transcript"
+        copyTranscriptButton.configuration?.title = "Copy Log"
         copyTranscriptButton.addTarget(self, action: #selector(copyTerminalTranscript), for: .touchUpInside)
 
-        let copySelectionButton = UIButton(type: .system)
-        copySelectionButton.configuration = .plain()
-        copySelectionButton.configuration?.title = "Copy Active Selection"
-        copySelectionButton.addTarget(self, action: #selector(copyTerminalSelection), for: .touchUpInside)
+        [pasteClipboardButton, copyVisibleButton, copyTranscriptButton].forEach(terminalActionsRow.addArrangedSubview)
 
-        let clearSelectionButton = UIButton(type: .system)
-        clearSelectionButton.configuration = .plain()
-        clearSelectionButton.configuration?.title = "Clear Selection"
-        clearSelectionButton.addTarget(self, action: #selector(clearTerminalSelection), for: .touchUpInside)
+        let terminalKeysRow = UIStackView()
+        terminalKeysRow.axis = .horizontal
+        terminalKeysRow.spacing = 8
+        terminalKeysRow.distribution = .fillEqually
 
-        let pasteClipboardButton = UIButton(type: .system)
-        pasteClipboardButton.configuration = .plain()
-        pasteClipboardButton.configuration?.title = "Paste Clipboard to Terminal"
-        pasteClipboardButton.addTarget(self, action: #selector(pasteClipboardToTerminal), for: .touchUpInside)
+        let escButton = UIButton(type: .system)
+        escButton.configuration = .plain()
+        escButton.configuration?.title = "Esc"
+        escButton.addTarget(self, action: #selector(sendEscapeToTerminal), for: .touchUpInside)
 
-        [
-            titleLabel,
+        let tabButton = UIButton(type: .system)
+        tabButton.configuration = .plain()
+        tabButton.configuration?.title = "Tab"
+        tabButton.addTarget(self, action: #selector(sendTabToTerminal), for: .touchUpInside)
+
+        let ctrlCButton = UIButton(type: .system)
+        ctrlCButton.configuration = .plain()
+        ctrlCButton.configuration?.title = "Ctrl+C"
+        ctrlCButton.addTarget(self, action: #selector(sendCtrlCToTerminal), for: .touchUpInside)
+
+        let upButton = UIButton(type: .system)
+        upButton.configuration = .plain()
+        upButton.configuration?.title = "↑"
+        upButton.addTarget(self, action: #selector(sendArrowUpToTerminal), for: .touchUpInside)
+
+        let downButton = UIButton(type: .system)
+        downButton.configuration = .plain()
+        downButton.configuration?.title = "↓"
+        downButton.addTarget(self, action: #selector(sendArrowDownToTerminal), for: .touchUpInside)
+
+        [escButton, tabButton, ctrlCButton, upButton, downButton].forEach(terminalKeysRow.addArrangedSubview)
+
+        let connectSection = UIStackView(arrangedSubviews: [
             hostField,
             portField,
             usernameField,
             passwordField,
-            connectButton,
+            connectButton
+        ])
+        connectSection.axis = .vertical
+        connectSection.spacing = 10
+        sshConnectSectionView = connectSection
+
+        let sessionSection = UIStackView(arrangedSubviews: [
+            openTerminalSessionButton,
             commandField,
-            sendButton,
-            pasteClipboardButton,
-            copySelectionButton,
-            clearSelectionButton,
-            copyVisibleButton,
-            copyTranscriptButton
+            sendRow,
+            terminalKeysRow,
+            terminalActionsRow,
+            terminalPreviewView,
+            terminalCommandLogLabel
+        ])
+        sessionSection.axis = .vertical
+        sessionSection.spacing = 10
+        sshSessionSectionView = sessionSection
+
+        [
+            titleLabel,
+            terminalStatusLabel,
+            connectSection,
+            sessionSection
         ].forEach(stack.addArrangedSubview)
 
         return stack
@@ -1045,7 +1136,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         let titleLabel = UILabel()
         titleLabel.font = .preferredFont(forTextStyle: .headline)
         titleLabel.numberOfLines = 0
-        titleLabel.text = "VNC Spike"
+        titleLabel.text = "VNC Connection"
 
         configureField(vncHostField, placeholder: "VNC host", textContentType: .URL)
         configureField(vncPortField, placeholder: "VNC port", keyboardType: .numberPad)
@@ -1062,20 +1153,9 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
         vncQualityControl.selectedSegmentIndex = 1
 
-        let trackpadLabel = UILabel()
-        trackpadLabel.font = .preferredFont(forTextStyle: .footnote)
-        trackpadLabel.textColor = .secondaryLabel
-        trackpadLabel.text = "Trackpad mode"
-
-        let trackpadRow = UIStackView(arrangedSubviews: [trackpadLabel, vncTrackpadSwitch])
-        trackpadRow.axis = .horizontal
-        trackpadRow.alignment = .center
-        trackpadRow.distribution = .equalSpacing
-        vncTrackpadSwitch.isOn = true
-
         let connectButton = UIButton(type: .system)
         connectButton.configuration = .filled()
-        connectButton.configuration?.title = "Connect Focused VNC"
+        connectButton.configuration?.title = "Connect VNC"
         connectButton.addTarget(self, action: #selector(connectVNC), for: .touchUpInside)
 
         let sessionButtons = UIStackView()
@@ -1096,58 +1176,10 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
         [reconnectButton, disconnectButton].forEach(sessionButtons.addArrangedSubview)
 
-        let buttons = UIStackView()
-        buttons.axis = .horizontal
-        buttons.spacing = 8
-        buttons.distribution = .fillEqually
-
         let sendButton = UIButton(type: .system)
         sendButton.configuration = .tinted()
         sendButton.configuration?.title = "Send Text"
         sendButton.addTarget(self, action: #selector(sendTextToVNC), for: .touchUpInside)
-
-        let clickButton = UIButton(type: .system)
-        clickButton.configuration = .plain()
-        clickButton.configuration?.title = "Primary"
-        clickButton.addTarget(self, action: #selector(clickFocusedVNC), for: .touchUpInside)
-
-        let secondaryClickButton = UIButton(type: .system)
-        secondaryClickButton.configuration = .plain()
-        secondaryClickButton.configuration?.title = "Secondary"
-        secondaryClickButton.addTarget(self, action: #selector(secondaryClickFocusedVNC), for: .touchUpInside)
-
-        let middleClickButton = UIButton(type: .system)
-        middleClickButton.configuration = .plain()
-        middleClickButton.configuration?.title = "Middle"
-        middleClickButton.addTarget(self, action: #selector(middleClickFocusedVNC), for: .touchUpInside)
-
-        let qualityButton = UIButton(type: .system)
-        qualityButton.configuration = .plain()
-        qualityButton.configuration?.title = "Cycle Quality"
-        qualityButton.addTarget(self, action: #selector(cycleVNCQuality), for: .touchUpInside)
-
-        [sendButton, clickButton, secondaryClickButton, middleClickButton].forEach(buttons.addArrangedSubview)
-
-        let pointerModeButtons = UIStackView()
-        pointerModeButtons.axis = .horizontal
-        pointerModeButtons.spacing = 8
-        pointerModeButtons.distribution = .fillEqually
-
-        vncDragButton.configuration = .plain()
-        vncDragButton.configuration?.title = "Start Drag"
-        vncDragButton.addTarget(self, action: #selector(toggleVNCPrimaryDrag), for: .touchUpInside)
-
-        let wheelUpButton = UIButton(type: .system)
-        wheelUpButton.configuration = .plain()
-        wheelUpButton.configuration?.title = "Wheel Up"
-        wheelUpButton.addTarget(self, action: #selector(scrollVNCWheelUp), for: .touchUpInside)
-
-        let wheelDownButton = UIButton(type: .system)
-        wheelDownButton.configuration = .plain()
-        wheelDownButton.configuration?.title = "Wheel Down"
-        wheelDownButton.addTarget(self, action: #selector(scrollVNCWheelDown), for: .touchUpInside)
-
-        [vncDragButton, wheelUpButton, wheelDownButton, qualityButton].forEach(pointerModeButtons.addArrangedSubview)
 
         let clipboardButtons = UIStackView()
         clipboardButtons.axis = .horizontal
@@ -1166,22 +1198,34 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
         [pasteClipboardButton, copyRemoteClipboardButton].forEach(clipboardButtons.addArrangedSubview)
 
-        [
-            titleLabel,
-            vncStatusLabel,
+        let connectSection = UIStackView(arrangedSubviews: [
             vncHostField,
             vncPortField,
             vncPasswordField,
             qualityLabel,
             vncQualityControl,
-            trackpadRow,
-            connectButton,
+            connectButton
+        ])
+        connectSection.axis = .vertical
+        connectSection.spacing = 10
+        vncConnectSectionView = connectSection
+
+        let sessionSection = UIStackView(arrangedSubviews: [
             sessionButtons,
             vncInputField,
-            buttons,
-            pointerModeButtons,
+            sendButton,
             clipboardButtons,
             vncPreviewView
+        ])
+        sessionSection.axis = .vertical
+        sessionSection.spacing = 10
+        vncSessionSectionView = sessionSection
+
+        [
+            titleLabel,
+            vncStatusLabel,
+            connectSection,
+            sessionSection
         ].forEach(stack.addArrangedSubview)
 
         return stack
@@ -1243,7 +1287,16 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         }
 
         Task {
-            await AppEnvironment.phaseZero.connectFocusedTerminal(using: request)
+            let didConnect = await AppEnvironment.phaseZero.connectFocusedTerminal(using: request)
+            guard didConnect else {
+                return
+            }
+
+            await MainActor.run {
+                self.currentFlowStep = .session
+                self.applyFlowStepUI(for: .ssh)
+                self.openFullSSHSession()
+            }
         }
     }
 
@@ -1254,12 +1307,60 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             return
         }
 
-        let command = text.hasSuffix("\n") ? text : text + "\n"
         commandField.text = nil
+        sendTerminalText(text, label: text)
+    }
 
-        Task {
-            await AppEnvironment.phaseZero.sendInputToFocusedTerminal(command)
+    @objc
+    private func sendCommandLineToTerminal() {
+        guard let text = commandField.text,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
         }
+
+        commandField.text = nil
+        sendTerminalText(text + "\n", label: text + "↵")
+    }
+
+    @objc
+    private func sendEscapeToTerminal() {
+        sendTerminalText("\u{001B}", label: "Esc")
+    }
+
+    @objc
+    private func sendTabToTerminal() {
+        sendTerminalText("\t", label: "Tab")
+    }
+
+    @objc
+    private func sendCtrlCToTerminal() {
+        sendTerminalText("\u{0003}", label: "Ctrl+C")
+    }
+
+    @objc
+    private func sendArrowUpToTerminal() {
+        sendTerminalText("\u{001B}[A", label: "ArrowUp")
+    }
+
+    @objc
+    private func sendArrowDownToTerminal() {
+        sendTerminalText("\u{001B}[B", label: "ArrowDown")
+    }
+
+    private func sendTerminalText(_ text: String, label: String) {
+        Task {
+            await AppEnvironment.phaseZero.sendInputToFocusedTerminal(text)
+            await MainActor.run {
+                self.appendTerminalCommandLog(label)
+            }
+        }
+    }
+
+    private func appendTerminalCommandLog(_ entry: String) {
+        let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        terminalCommandLogEntries.append("\(stamp)  \(entry)")
+        terminalCommandLogEntries = Array(terminalCommandLogEntries.suffix(6))
+        terminalCommandLogLabel.text = terminalCommandLogEntries.joined(separator: "\n")
     }
 
     @objc
@@ -1408,6 +1509,10 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
         Task {
             await AppEnvironment.phaseZero.connectFocusedVNC(using: request)
+            await MainActor.run {
+                self.currentFlowStep = .session
+                self.applyFlowStepUI(for: .vnc)
+            }
         }
     }
 
@@ -1559,6 +1664,11 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     }
 
     @objc
+    private func openFullSSHSession() {
+        navigationController?.pushViewController(SSHTerminalSessionViewController(), animated: true)
+    }
+
+    @objc
     private func openFiles() {
         Task {
             await AppEnvironment.phaseZero.openWindow(.files)
@@ -1683,19 +1793,37 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
     @objc
     private func workModeChanged() {
-        let mode: PhaseZeroWorkMode
-        switch workModeControl.selectedSegmentIndex {
-        case 1:
-            mode = .vnc
-        case 2:
-            mode = .browser
-        default:
-            mode = .ssh
-        }
+        let mode = currentWorkMode()
+        applyFlowStepUI(for: mode)
 
         Task {
             await AppEnvironment.phaseZero.setActiveWorkMode(mode)
         }
+    }
+
+    @objc
+    private func flowStepChanged() {
+        let selectedIndex = flowStepControl.selectedSegmentIndex
+        guard let step = FlowStep(rawValue: selectedIndex) else {
+            return
+        }
+
+        currentFlowStep = step
+        applyFlowStepUI(for: currentWorkMode())
+    }
+
+    @objc
+    private func flowBackTapped() {
+        let nextRaw = max(currentFlowStep.rawValue - 1, FlowStep.mode.rawValue)
+        currentFlowStep = FlowStep(rawValue: nextRaw) ?? .mode
+        applyFlowStepUI(for: currentWorkMode())
+    }
+
+    @objc
+    private func flowNextTapped() {
+        let nextRaw = min(currentFlowStep.rawValue + 1, FlowStep.session.rawValue)
+        currentFlowStep = FlowStep(rawValue: nextRaw) ?? .session
+        applyFlowStepUI(for: currentWorkMode())
     }
 
     @objc
@@ -1879,8 +2007,8 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         activeSoftRepeatDescription = sender.payloadDescription
         sendSoftKeyPayload(sender.payload, description: sender.payloadDescription)
 
-        let delayWorkItem = DispatchWorkItem { [weak self, weak sender] in
-            guard let self, let sender else {
+        let delayWorkItem = DispatchWorkItem { [weak self] in
+            guard let self else {
                 return
             }
 
@@ -1975,7 +2103,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         switch textField {
         case commandField:
-            sendCommandToTerminal()
+            sendCommandLineToTerminal()
         case passwordField:
             connectSSH()
         case vncInputField:
@@ -2224,6 +2352,27 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         }
 
         return "Mode: \(workMode) • Input capture: \(mode) • Target: \(target) • Keyboard: \(keyboardDestination)"
+    }
+
+    private func mirroredTargetText(snapshot: PhaseZeroSnapshot) -> String {
+        switch snapshot.activeWorkMode {
+        case .ssh:
+            guard let terminalState = focusedTerminalWindow(snapshot: snapshot)?.terminalState else {
+                return "SSH: окно терминала не выбрано"
+            }
+            return "SSH \(terminalState.connectionTitle) (\(terminalState.sessionState.rawValue.capitalized))"
+        case .vnc:
+            guard let vncState = focusedVNCWindow(snapshot: snapshot)?.vncState else {
+                return "VNC: окно не выбрано"
+            }
+            return "VNC \(vncState.connectionTitle) (\(vncState.sessionState.rawValue.capitalized))"
+        case .browser:
+            guard let browserState = focusedBrowserWindow(snapshot: snapshot)?.browserState else {
+                return "Browser: окно не выбрано"
+            }
+            let url = browserState.currentURLString ?? browserState.homeURLString
+            return "Browser \(url)"
+        }
     }
 
     private func focusedFilesWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
