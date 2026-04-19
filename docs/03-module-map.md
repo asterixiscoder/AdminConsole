@@ -77,7 +77,7 @@ Managed runtimes:
 - `SSHTerminalRuntime`
 - `VNCRuntime`
 - `FilesWorkspaceRuntime`
-- browser handle placeholders
+- `BrowserSessionRuntime` with navigation command state and host sync
 
 ### `WindowManager`
 

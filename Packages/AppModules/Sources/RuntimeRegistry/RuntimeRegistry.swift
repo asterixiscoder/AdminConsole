@@ -27,6 +27,7 @@ public actor RuntimeRegistry {
     private var handles: [WindowID: RuntimeHandle] = [:]
     private var terminalRuntimes: [WindowID: SSHTerminalRuntime] = [:]
     private var filesRuntimes: [WindowID: FilesWorkspaceRuntime] = [:]
+    private var browserRuntimes: [WindowID: BrowserSessionRuntime] = [:]
     private var vncRuntimes: [WindowID: VNCRuntime] = [:]
 
     public init() {}
@@ -58,6 +59,13 @@ public actor RuntimeRegistry {
         return handle
     }
 
+    public func registerBrowser(_ runtime: BrowserSessionRuntime, for windowID: WindowID) -> RuntimeHandle {
+        let handle = RuntimeHandle(windowID: windowID, kind: .browser)
+        handles[windowID] = handle
+        browserRuntimes[windowID] = runtime
+        return handle
+    }
+
     public func handle(for windowID: WindowID) -> RuntimeHandle? {
         handles[windowID]
     }
@@ -74,12 +82,17 @@ public actor RuntimeRegistry {
         vncRuntimes[windowID]
     }
 
+    public func browserRuntime(for windowID: WindowID) -> BrowserSessionRuntime? {
+        browserRuntimes[windowID]
+    }
+
     public func remove(windowID: WindowID) async {
         if let runtime = terminalRuntimes.removeValue(forKey: windowID) {
             await runtime.disconnect()
         }
 
         filesRuntimes.removeValue(forKey: windowID)
+        browserRuntimes.removeValue(forKey: windowID)
         if let runtime = vncRuntimes.removeValue(forKey: windowID) {
             await runtime.disconnect()
         }

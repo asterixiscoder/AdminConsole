@@ -25,10 +25,12 @@ Completed:
 - Files workspace with import and export
 - VNC runtime with password auth, richer encodings, pointer/drag/wheel, clipboard bridge
 - VNC reconnect flow with lifecycle pause/resume and desktop reconnect indicator
+- iPhone-first work modes (`SSH`, `VNC`, `Browser`) with active-mode synchronization
+- external desktop scene fullscreen mirroring of the active work window
 
 In progress:
 
-- Browser module hardening beyond spike-level host
+- Browser reliability hardening and richer navigation behavior
 - Release hardening and QA matrix completion
 
 ## Delivery Strategy
@@ -211,8 +213,8 @@ Exit Criteria:
 Current next focus:
 
 1. Browser hardening and restore behavior
-2. Final external-display reconnect QA matrix
-3. Performance profiling on high-resolution outputs
+2. Input predictability QA for mode-switch and capture routing
+3. Final external-display reconnect and high-resolution profiling matrix
 
 ## Suggested Sequence and Duration
 

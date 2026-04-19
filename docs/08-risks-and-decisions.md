@@ -64,13 +64,14 @@ Severity: high
 Problem:
 
 - `WKWebView` is not a serializable runtime object in the same way as SSH or VNC engines
-- mirroring a fully interactive browser across scenes is not a safe assumption
+- dual-scene browser interaction can drift if navigation state is not synchronized by commands and acknowledgements
 
 Mitigation:
 
 - keep browser host scene-local
-- store only metadata and snapshots in shared state
-- validate the browser interaction model in the first spike phase
+- store browser runtime metadata in shared state
+- synchronize browser navigation through command IDs and host acknowledgements
+- keep iPhone-first mode control as the canonical input source
 
 Fallback:
 

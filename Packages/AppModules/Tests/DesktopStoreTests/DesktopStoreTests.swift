@@ -1,5 +1,6 @@
 import DesktopDomain
 import DesktopStore
+import WindowManager
 import XCTest
 
 final class DesktopStoreTests: XCTestCase {
@@ -98,5 +99,80 @@ final class DesktopStoreTests: XCTestCase {
                 focus: TerminalGridPoint(row: 1, column: 2)
             )
         )
+    }
+
+    func testUpdateBrowserSurfaceStoresMetadataAndTitle() async throws {
+        let store = DesktopStore()
+        let initial = await store.dispatch(.openWindow(.browser))
+        let windowID = try XCTUnwrap(initial.windows.first?.id)
+
+        var surface = BrowserSurfaceState.idle()
+        surface.currentURLString = "https://example.com/docs"
+        surface.pageTitle = "Example Docs"
+        surface.statusMessage = "Page loaded"
+        surface.canGoBack = true
+
+        let snapshot = await store.dispatch(.updateBrowserSurface(windowID: windowID, surface: surface))
+        let browserWindow = try XCTUnwrap(snapshot.windows.first(where: { $0.id == windowID }))
+
+        XCTAssertEqual(browserWindow.browserState, surface)
+        XCTAssertEqual(browserWindow.title, "Example Docs")
+    }
+
+    func testToggleWindowMaximizedStoresAndRestoresFrame() async throws {
+        let store = DesktopStore()
+        let initial = await store.dispatch(.openWindow(.vnc))
+        let windowID = try XCTUnwrap(initial.windows.first?.id)
+        let originalFrame = try XCTUnwrap(initial.windows.first?.frame)
+
+        let maximized = await store.dispatch(.toggleWindowMaximized(windowID))
+        let maximizedWindow = try XCTUnwrap(maximized.windows.first(where: { $0.id == windowID }))
+        XCTAssertTrue(maximizedWindow.isMaximized)
+        XCTAssertEqual(maximizedWindow.frame, WindowManager.maximizedFrame())
+        XCTAssertEqual(maximizedWindow.restoredFrame, WindowManager.fit(originalFrame))
+
+        let restored = await store.dispatch(.toggleWindowMaximized(windowID))
+        let restoredWindow = try XCTUnwrap(restored.windows.first(where: { $0.id == windowID }))
+        XCTAssertFalse(restoredWindow.isMaximized)
+        XCTAssertNil(restoredWindow.restoredFrame)
+        XCTAssertEqual(restoredWindow.frame, WindowManager.fit(originalFrame))
+    }
+
+    func testUpdateWindowFrameClearsMaximizedState() async throws {
+        let store = DesktopStore()
+        let initial = await store.dispatch(.openWindow(.browser))
+        let windowID = try XCTUnwrap(initial.windows.first?.id)
+        _ = await store.dispatch(.toggleWindowMaximized(windowID))
+
+        let movedFrame = NormalizedRect(x: 0.2, y: 0.2, width: 0.6, height: 0.5)
+        let snapshot = await store.dispatch(.updateWindowFrame(windowID: windowID, frame: movedFrame))
+        let window = try XCTUnwrap(snapshot.windows.first(where: { $0.id == windowID }))
+
+        XCTAssertFalse(window.isMaximized)
+        XCTAssertNil(window.restoredFrame)
+        XCTAssertEqual(window.frame, WindowManager.fit(movedFrame))
+    }
+
+    func testSetInputCaptureModePersistsInSnapshot() async {
+        let store = DesktopStore()
+
+        let updated = await store.dispatch(.setInputCaptureMode(.vnc))
+
+        XCTAssertEqual(updated.inputCaptureMode, .vnc)
+        XCTAssertEqual(updated.revision, 1)
+    }
+
+    func testSetActiveWorkModeFocusesMatchingWindowKind() async {
+        let store = DesktopStore()
+
+        _ = await store.dispatch(.openWindow(.terminal))
+        _ = await store.dispatch(.openWindow(.browser))
+        _ = await store.dispatch(.openWindow(.vnc))
+
+        let updated = await store.dispatch(.setActiveWorkMode(.browser))
+        let focused = updated.windows.first(where: { $0.id == updated.focusedWindowID })
+
+        XCTAssertEqual(updated.activeWorkMode, .browser)
+        XCTAssertEqual(focused?.kind, .browser)
     }
 }

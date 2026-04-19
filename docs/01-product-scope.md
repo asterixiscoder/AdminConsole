@@ -13,9 +13,9 @@ The app behaves as a self-contained operating environment inside the application
 
 The user connects an iPhone to an external monitor, opens AdminConsole, and gets a desktop workspace on the monitor. Using the iPhone, hardware keyboard, and pointer devices, the user can:
 
-- open and manage terminal windows
-- browse and manipulate files
-- use embedded web applications
+- switch work modes on iPhone (`SSH`, `VNC`, `Browser`) and keep control predictable
+- operate the active runtime on iPhone and mirror it to the external display
+- open and manage terminal, files, VNC, and browser windows when needed
 - connect to remote systems via SSH
 - view and control remote desktops via VNC
 
@@ -58,7 +58,8 @@ The user connects an iPhone to an external monitor, opens AdminConsole, and gets
 The user should feel like there is one desktop workspace, not two disconnected screens:
 
 - the iPhone is the controller
-- the external display is the workspace canvas
+- the external display mirrors the active work context
+- mode switch on iPhone must immediately update the mirrored window
 
 ### Keyboard-First Operation
 
@@ -78,10 +79,11 @@ The MVP is successful when the following are true:
 
 1. The app can open a desktop scene on an external monitor and restore it after reconnect.
 2. The iPhone can control cursor, focus, and window operations on the external display.
-3. The user can open and use:
+3. The iPhone mode switch (`SSH`, `VNC`, `Browser`) changes the active control target without ambiguous routing.
+4. The user can open and use:
    - at least one terminal window backed by SSH
    - one file manager window for sandboxed files
    - one VNC window
    - one embedded browser window
-4. Keyboard, pointer, and monitor resolution changes behave correctly enough for daily workflows.
-
+5. The external display mirrors the active work window fullscreen and adapts to monitor resolution changes.
+6. Keyboard, pointer, and monitor resolution changes behave correctly enough for daily workflows.

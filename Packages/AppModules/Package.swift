@@ -178,6 +178,13 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "InputKitTests",
+            dependencies: [
+                "DesktopDomain",
+                "InputKit"
+            ]
+        ),
+        .testTarget(
             name: "VNCKitTests",
             dependencies: [
                 "DesktopDomain",

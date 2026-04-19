@@ -45,6 +45,87 @@ public enum VNCConnectionState: String, Codable, CaseIterable, Sendable {
     case failed
 }
 
+public enum BrowserNavigationCommand: String, Codable, Sendable {
+    case reload
+    case goBack
+    case goForward
+}
+
+public struct BrowserSurfaceState: Codable, Equatable, Sendable {
+    public static let maximumEventLogCount = 10
+
+    public var homeURLString: String
+    public var currentURLString: String?
+    public var pageTitle: String?
+    public var statusMessage: String
+    public var isLoading: Bool
+    public var canGoBack: Bool
+    public var canGoForward: Bool
+    public var navigationCommand: BrowserNavigationCommand?
+    public var navigationCommandID: Int
+    public var recentEvents: [String]
+
+    public init(
+        homeURLString: String = "https://developer.apple.com",
+        currentURLString: String? = nil,
+        pageTitle: String? = nil,
+        statusMessage: String = "Ready for browser session",
+        isLoading: Bool = false,
+        canGoBack: Bool = false,
+        canGoForward: Bool = false,
+        navigationCommand: BrowserNavigationCommand? = nil,
+        navigationCommandID: Int = 0,
+        recentEvents: [String] = []
+    ) {
+        self.homeURLString = homeURLString
+        self.currentURLString = currentURLString
+        self.pageTitle = pageTitle
+        self.statusMessage = statusMessage
+        self.isLoading = isLoading
+        self.canGoBack = canGoBack
+        self.canGoForward = canGoForward
+        self.navigationCommand = navigationCommand
+        self.navigationCommandID = max(0, navigationCommandID)
+        self.recentEvents = Array(recentEvents.suffix(Self.maximumEventLogCount))
+    }
+
+    public static func idle(homeURLString: String = "https://developer.apple.com") -> BrowserSurfaceState {
+        BrowserSurfaceState(
+            homeURLString: homeURLString,
+            currentURLString: nil,
+            pageTitle: nil,
+            statusMessage: "Ready for browser session",
+            isLoading: false,
+            canGoBack: false,
+            canGoForward: false,
+            navigationCommand: nil,
+            navigationCommandID: 0,
+            recentEvents: []
+        )
+    }
+
+    public var displayTitle: String {
+        let trimmedTitle = pageTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedTitle.isEmpty {
+            return trimmedTitle
+        }
+
+        if let currentURLString,
+           let url = URL(string: currentURLString),
+           let host = url.host,
+           !host.isEmpty {
+            return host
+        }
+
+        return "Browser"
+    }
+
+    public mutating func appendEvent(_ event: String) {
+        recentEvents.append(event)
+        recentEvents = Array(recentEvents.suffix(Self.maximumEventLogCount))
+    }
+}
+
 public struct TerminalCursorState: Codable, Equatable, Sendable {
     public var row: Int
     public var column: Int
@@ -690,9 +771,12 @@ public struct DesktopWindow: Identifiable, Codable, Equatable, Sendable {
     public var kind: DesktopWindowKind
     public var title: String
     public var frame: NormalizedRect
+    public var restoredFrame: NormalizedRect?
+    public var isMaximized: Bool
     public var isFocused: Bool
     public var terminalState: TerminalSurfaceState?
     public var filesState: FilesSurfaceState?
+    public var browserState: BrowserSurfaceState?
     public var vncState: VNCSurfaceState?
 
     public init(
@@ -700,18 +784,24 @@ public struct DesktopWindow: Identifiable, Codable, Equatable, Sendable {
         kind: DesktopWindowKind,
         title: String,
         frame: NormalizedRect = .defaultWindow,
+        restoredFrame: NormalizedRect? = nil,
+        isMaximized: Bool = false,
         isFocused: Bool = false,
         terminalState: TerminalSurfaceState? = nil,
         filesState: FilesSurfaceState? = nil,
+        browserState: BrowserSurfaceState? = nil,
         vncState: VNCSurfaceState? = nil
     ) {
         self.id = id
         self.kind = kind
         self.title = title
         self.frame = frame
+        self.restoredFrame = restoredFrame
+        self.isMaximized = isMaximized
         self.isFocused = isFocused
         self.terminalState = terminalState
         self.filesState = filesState
+        self.browserState = browserState
         self.vncState = vncState
     }
 }
@@ -738,10 +828,35 @@ public struct CursorState: Codable, Equatable, Sendable {
     }
 }
 
+public enum DesktopInputCaptureMode: String, Codable, CaseIterable, Sendable {
+    case automatic
+    case terminal
+    case vnc
+}
+
+public enum DesktopWorkMode: String, Codable, CaseIterable, Sendable {
+    case ssh
+    case vnc
+    case browser
+
+    public var windowKind: DesktopWindowKind {
+        switch self {
+        case .ssh:
+            return .terminal
+        case .vnc:
+            return .vnc
+        case .browser:
+            return .browser
+        }
+    }
+}
+
 public struct DesktopSnapshot: Codable, Equatable, Sendable {
     public var workspaceID: WorkspaceID
     public var windows: [DesktopWindow]
     public var focusedWindowID: WindowID?
+    public var activeWorkMode: DesktopWorkMode
+    public var inputCaptureMode: DesktopInputCaptureMode
     public var displayProfile: DisplayProfile
     public var cursor: CursorState
     public var isExternalDisplayConnected: Bool
@@ -752,6 +867,8 @@ public struct DesktopSnapshot: Codable, Equatable, Sendable {
         workspaceID: WorkspaceID = WorkspaceID(),
         windows: [DesktopWindow] = [],
         focusedWindowID: WindowID? = nil,
+        activeWorkMode: DesktopWorkMode = .ssh,
+        inputCaptureMode: DesktopInputCaptureMode = .automatic,
         displayProfile: DisplayProfile = DisplayProfile(),
         cursor: CursorState = CursorState(),
         isExternalDisplayConnected: Bool = false,
@@ -761,6 +878,8 @@ public struct DesktopSnapshot: Codable, Equatable, Sendable {
         self.workspaceID = workspaceID
         self.windows = windows
         self.focusedWindowID = focusedWindowID
+        self.activeWorkMode = activeWorkMode
+        self.inputCaptureMode = inputCaptureMode
         self.displayProfile = displayProfile
         self.cursor = cursor
         self.isExternalDisplayConnected = isExternalDisplayConnected

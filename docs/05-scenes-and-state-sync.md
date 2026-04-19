@@ -20,9 +20,11 @@ Scenes must not synchronize with each other directly. They synchronize through s
 Contains synchronized state:
 
 - open windows and window ordering
+- active iPhone work mode (`SSH` / `VNC` / `Browser`)
 - workspace definitions
 - focused window and focused target
 - layout metadata
+- input capture mode
 - display profile
 - browser session metadata
 - connection descriptors
@@ -90,14 +92,21 @@ May be recreated freely:
 - hover highlights
 - keyboard help panels
 
+## Active Mirror Rule
+
+The external display should render one active work context at a time:
+
+- `ControlScene` selects active mode and drives input
+- `DesktopScene` mirrors the active mode window fullscreen
+- non-active windows remain in shared state but are not the primary rendered surface
+
 ## Browser Special Case
 
-Browser windows need extra care:
+Browser support still requires scene-aware handling:
 
 - `WKWebView` instances are scene-bound UI objects
-- authoritative browser state should be reduced to metadata in `DesktopStore`
-- heavy web view hosting should stay in a scene-local host layer
-- the control scene should use previews or snapshots, not a mirrored interactive web view
+- browser runtime state remains authoritative in `DesktopStore`
+- browser host events synchronize URL/title/loading/navigation availability across scenes
 
 This is the main reason browser support carries higher implementation risk than terminal or VNC.
 

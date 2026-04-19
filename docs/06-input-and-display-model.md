@@ -18,6 +18,7 @@ Responsibilities:
 - normalize all input into a common event model
 - resolve current focus target
 - distinguish text input from command input
+- bind routing to active iPhone work mode
 - translate gestures into desktop actions
 - send window-targeted events to runtimes
 
@@ -71,6 +72,12 @@ Examples:
 - content focus inside terminal decides where text goes
 - browser URL bar focus overrides page-level shortcuts
 
+In addition, mode selection is explicit:
+
+- `SSH` mode prefers terminal capture
+- `VNC` mode prefers VNC capture
+- `Browser` mode falls back to automatic capture and browser navigation controls
+
 ## Cursor Model
 
 There should be one canonical cursor state:
@@ -118,6 +125,12 @@ Coordinate transforms should be explicit:
 - physical pointer delta to logical movement
 - content viewport to window client area
 
+Pointer routing should apply source-aware gain:
+
+- touch trackpad
+- hardware pointer
+- keyboard-assisted nudging
+
 ## Window Layout Rules
 
 Minimum rules:
@@ -156,6 +169,7 @@ When VNC transport reconnect is in progress, reconnect state should be visible i
 - text focus must be explicit
 - scroll routing must not conflict with window drag gestures
 - browser shortcuts must be filtered against desktop shortcuts
+- browser command actions (`back`, `forward`, `reload`, `navigate`) must be idempotent and acknowledged by command ID
 
 ## Edge Cases to Validate
 

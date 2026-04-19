@@ -7,11 +7,16 @@ public enum DesktopAction: Equatable, Sendable {
     case openWindow(DesktopWindowKind)
     case focusWindow(WindowID)
     case closeWindow(WindowID)
+    case toggleWindowMaximized(WindowID)
+    case updateWindowFrame(windowID: WindowID, frame: NormalizedRect)
     case updateTerminalSurface(windowID: WindowID, surface: TerminalSurfaceState)
     case updateFilesSurface(windowID: WindowID, surface: FilesSurfaceState)
+    case updateBrowserSurface(windowID: WindowID, surface: BrowserSurfaceState)
     case updateVNCSurface(windowID: WindowID, surface: VNCSurfaceState)
     case updateDisplayProfile(DisplayProfile)
     case setExternalDisplayConnected(Bool)
+    case setInputCaptureMode(DesktopInputCaptureMode)
+    case setActiveWorkMode(DesktopWorkMode)
     case moveCursor(deltaX: Double, deltaY: Double)
     case noteInput(String)
 }
@@ -88,6 +93,36 @@ public actor DesktopStore {
                 updated.isFocused = updated.id == next.focusedWindowID
                 return updated
             }
+        case let .toggleWindowMaximized(windowID):
+            next.windows = next.windows.map { item in
+                guard item.id == windowID else {
+                    return item
+                }
+
+                var updated = item
+                if updated.isMaximized {
+                    updated.frame = WindowManager.fit(updated.restoredFrame ?? WindowManager.defaultFrame(for: updated.kind, index: 0))
+                    updated.restoredFrame = nil
+                    updated.isMaximized = false
+                } else {
+                    updated.restoredFrame = WindowManager.fit(updated.frame)
+                    updated.frame = WindowManager.maximizedFrame()
+                    updated.isMaximized = true
+                }
+                return updated
+            }
+        case let .updateWindowFrame(windowID, frame):
+            next.windows = next.windows.map { item in
+                guard item.id == windowID else {
+                    return item
+                }
+
+                var updated = item
+                updated.frame = WindowManager.fit(frame)
+                updated.isMaximized = false
+                updated.restoredFrame = nil
+                return updated
+            }
         case let .updateTerminalSurface(windowID, surface):
             next.windows = next.windows.map { item in
                 guard item.id == windowID, item.kind == .terminal else {
@@ -121,6 +156,17 @@ public actor DesktopStore {
                 updated.title = surface.displayTitle
                 return updated
             }
+        case let .updateBrowserSurface(windowID, surface):
+            next.windows = next.windows.map { item in
+                guard item.id == windowID, item.kind == .browser else {
+                    return item
+                }
+
+                var updated = item
+                updated.browserState = surface
+                updated.title = surface.displayTitle
+                return updated
+            }
         case let .updateDisplayProfile(profile):
             next.displayProfile = profile
             next.windows = next.windows.map { item in
@@ -130,6 +176,19 @@ public actor DesktopStore {
             }
         case let .setExternalDisplayConnected(isConnected):
             next.isExternalDisplayConnected = isConnected
+        case let .setInputCaptureMode(mode):
+            next.inputCaptureMode = mode
+        case let .setActiveWorkMode(mode):
+            next.activeWorkMode = mode
+
+            if let target = next.windows.last(where: { $0.kind == mode.windowKind }) {
+                next.focusedWindowID = target.id
+                next.windows = next.windows.map { item in
+                    var updated = item
+                    updated.isFocused = updated.id == target.id
+                    return updated
+                }
+            }
         case let .moveCursor(deltaX, deltaY):
             next.cursor = WindowManager.fit(
                 CursorState(
@@ -139,6 +198,10 @@ public actor DesktopStore {
             )
         case let .noteInput(description):
             next.lastInputDescription = description
+        }
+
+        guard next != snapshot else {
+            return snapshot
         }
 
         next.revision += 1
@@ -169,6 +232,7 @@ public actor DesktopStore {
             isFocused: isFocused,
             terminalState: kind == .terminal ? .idle(title: defaultTitle(for: kind)) : nil,
             filesState: kind == .files ? .idle(workspaceName: defaultTitle(for: kind)) : nil,
+            browserState: kind == .browser ? .idle() : nil,
             vncState: kind == .vnc ? .idle(title: defaultTitle(for: kind)) : nil
         )
     }

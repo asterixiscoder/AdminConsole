@@ -57,10 +57,13 @@ public typealias PhaseZeroTerminalGridPoint = TerminalGridPoint
 public typealias PhaseZeroTerminalSelection = TerminalSelection
 public typealias PhaseZeroFilesState = FilesSurfaceState
 public typealias PhaseZeroFilesEntry = FilesEntry
+public typealias PhaseZeroBrowserState = BrowserSurfaceState
 public typealias PhaseZeroVNCState = VNCSurfaceState
 public typealias PhaseZeroVNCQualityPreset = VNCQualityPreset
 public typealias PhaseZeroVNCPointerButton = VNCRuntime.PointerButton
 public typealias PhaseZeroVNCScrollDirection = VNCRuntime.ScrollDirection
+public typealias PhaseZeroInputCaptureMode = DesktopInputCaptureMode
+public typealias PhaseZeroWorkMode = DesktopWorkMode
 
 public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
     public var host: String
@@ -167,6 +170,8 @@ public struct PhaseZeroVNCConnectionRequest: Sendable, Equatable {
 public actor PhaseZeroCoordinator {
     private let bootstrap: AdminConsoleBootstrap
     private var didStart = false
+    private var latestExternalSceneProfile: DisplayProfile?
+    private var isManualDisplayOverrideEnabled = false
 
     public init(bootstrap: AdminConsoleBootstrap = AdminConsoleBootstrap()) {
         self.bootstrap = bootstrap
@@ -212,8 +217,127 @@ public actor PhaseZeroCoordinator {
         _ = await bootstrap.store.dispatch(.focusWindow(id))
     }
 
+    public func closeWindow(_ id: PhaseZeroWindowID) async {
+        _ = await bootstrap.store.dispatch(.closeWindow(id))
+        await bootstrap.runtimes.remove(windowID: id)
+        await registerControlInput("Window closed")
+    }
+
+    public func updateWindowFrame(_ id: PhaseZeroWindowID, frame: PhaseZeroRect) async {
+        _ = await bootstrap.store.dispatch(.updateWindowFrame(windowID: id, frame: frame))
+    }
+
+    public func toggleWindowMaximized(_ id: PhaseZeroWindowID) async {
+        _ = await bootstrap.store.dispatch(.toggleWindowMaximized(id))
+
+        let snapshot = await bootstrap.store.currentSnapshot()
+        if let window = snapshot.windows.first(where: { $0.id == id }) {
+            await registerControlInput(
+                window.isMaximized
+                    ? "Window maximized: \(window.title)"
+                    : "Window restored: \(window.title)"
+            )
+        } else {
+            await registerControlInput("Window maximize toggled")
+        }
+    }
+
+    public func toggleMaximizeFocusedWindow() async {
+        guard let windowID = await targetFocusableWindowID() else {
+            await registerControlInput("Maximize skipped: no window available")
+            return
+        }
+
+        await toggleWindowMaximized(windowID)
+    }
+
     public func moveCursor(deltaX: Double, deltaY: Double) async {
         _ = await bootstrap.store.dispatch(.moveCursor(deltaX: deltaX, deltaY: deltaY))
+    }
+
+    public func routeKeyboardInputTargets() async -> RoutedKeyboardInput {
+        let snapshot = await bootstrap.store.currentSnapshot()
+        let targetWindow = inputCaptureWindow(in: snapshot)
+        return bootstrap.inputRouter.routeKeyboardInput(
+            focusedWindow: targetWindow,
+            captureMode: snapshot.inputCaptureMode
+        )
+    }
+
+    public func handlePointerPan(
+        translation: CGPoint,
+        surfaceSize: CGSize,
+        source: PointerInputSource = .touchTrackpad
+    ) async {
+        let snapshot = await bootstrap.store.currentSnapshot()
+        let targetWindow = inputCaptureWindow(in: snapshot)
+        let routed = bootstrap.inputRouter.routePointerMotion(
+            PointerMotionInput(
+                translationX: translation.x,
+                translationY: translation.y,
+                surfaceWidth: surfaceSize.width,
+                surfaceHeight: surfaceSize.height,
+                source: source
+            ),
+            focusedWindow: targetWindow,
+            captureMode: snapshot.inputCaptureMode
+        )
+
+        guard routed.cursorDeltaX != 0 || routed.cursorDeltaY != 0 else {
+            return
+        }
+
+        _ = await bootstrap.store.dispatch(
+            .moveCursor(deltaX: routed.cursorDeltaX, deltaY: routed.cursorDeltaY)
+        )
+
+        if routed.shouldForwardToVNC,
+           let windowID = targetVNCPointerWindowID(in: snapshot)?.id,
+           let runtime = await vncRuntime(for: windowID) {
+            await runtime.movePointer(
+                deltaX: routed.forwardedVNCDeltaX,
+                deltaY: routed.forwardedVNCDeltaY
+            )
+        }
+    }
+
+    public func setInputCaptureMode(_ mode: PhaseZeroInputCaptureMode) async {
+        _ = await bootstrap.store.dispatch(.setInputCaptureMode(mode))
+
+        let summary: String
+        switch mode {
+        case .automatic:
+            summary = "Input capture: Automatic"
+        case .terminal:
+            summary = "Input capture: Terminal"
+        case .vnc:
+            summary = "Input capture: VNC"
+        }
+        await registerControlInput(summary)
+    }
+
+    public func setActiveWorkMode(_ mode: PhaseZeroWorkMode) async {
+        var snapshot = await bootstrap.store.currentSnapshot()
+        if snapshot.windows.last(where: { $0.kind == mode.windowKind }) == nil {
+            _ = await openWindow(mode.windowKind)
+            snapshot = await bootstrap.store.currentSnapshot()
+        }
+
+        _ = await bootstrap.store.dispatch(.setActiveWorkMode(mode))
+        let preferredCaptureMode: PhaseZeroInputCaptureMode
+        switch mode {
+        case .ssh:
+            preferredCaptureMode = .terminal
+        case .vnc:
+            preferredCaptureMode = .vnc
+        case .browser:
+            preferredCaptureMode = .automatic
+        }
+        _ = await bootstrap.store.dispatch(.setInputCaptureMode(preferredCaptureMode))
+        await ensureRuntimes(for: snapshot)
+        await registerControlInput(
+            "Active mode: \(mode.rawValue.uppercased()) • Capture: \(preferredCaptureMode.rawValue.capitalized)"
+        )
     }
 
     public func noteInput(_ description: String) async {
@@ -231,11 +355,45 @@ public actor PhaseZeroCoordinator {
                 height: size.height,
                 scale: scale ?? 1.0
             )
-            _ = await bootstrap.store.dispatch(.updateDisplayProfile(profile))
+            latestExternalSceneProfile = profile
+
+            if !isManualDisplayOverrideEnabled {
+                _ = await bootstrap.store.dispatch(.updateDisplayProfile(profile))
+            }
         }
 
         _ = await bootstrap.store.dispatch(.setExternalDisplayConnected(isConnected))
         bootstrap.logger.log("External display connected: \(isConnected)")
+    }
+
+    public func overrideDisplayProfile(
+        width: Double,
+        height: Double,
+        scale: Double
+    ) async {
+        isManualDisplayOverrideEnabled = true
+        let profile = DisplayProfile(
+            width: max(320, width),
+            height: max(240, height),
+            scale: max(0.5, min(4.0, scale))
+        )
+        _ = await bootstrap.store.dispatch(.updateDisplayProfile(profile))
+        await registerControlInput(
+            "Display profile override: \(Int(profile.width))x\(Int(profile.height)) @ \(String(format: "%.2f", profile.scale))x"
+        )
+    }
+
+    public func fitDisplayProfileToExternalScene() async {
+        guard let profile = latestExternalSceneProfile else {
+            await registerControlInput("Fit skipped: external scene metrics unavailable")
+            return
+        }
+
+        isManualDisplayOverrideEnabled = false
+        _ = await bootstrap.store.dispatch(.updateDisplayProfile(profile))
+        await registerControlInput(
+            "Display profile fitted to external scene: \(Int(profile.width))x\(Int(profile.height)) @ \(String(format: "%.2f", profile.scale))x"
+        )
     }
 
     public func registerControlInput(_ description: String) async {
@@ -266,6 +424,7 @@ public actor PhaseZeroCoordinator {
 
         do {
             let password = try await resolvePassword(for: request)
+            _ = await bootstrap.store.dispatch(.setActiveWorkMode(.ssh))
             await focusWindow(windowID)
             await registerControlInput("SSH connect: \(request.connectionSummary)")
             let didConnect = await runtime.connect(using: request.runtimeConfiguration(password: password))
@@ -429,6 +588,119 @@ public actor PhaseZeroCoordinator {
         return await runtime.exportSelectedEntryURL()
     }
 
+    public func navigateFocusedBrowser(to address: String) async {
+        let windowID: WindowID
+        if let focusedBrowser = await targetBrowserWindowID() {
+            windowID = focusedBrowser
+        } else if let opened = await openWindow(.browser) {
+            windowID = opened
+        } else {
+            await registerControlInput("Browser navigate failed: unable to create browser window")
+            return
+        }
+
+        guard let runtime = await browserRuntime(for: windowID) else {
+            await registerControlInput("Browser navigate failed: runtime unavailable")
+            return
+        }
+
+        _ = await bootstrap.store.dispatch(.setActiveWorkMode(.browser))
+        await focusWindow(windowID)
+        await runtime.navigate(to: address)
+        await registerControlInput("Browser navigate")
+    }
+
+    public func reloadFocusedBrowser() async {
+        guard let windowID = await targetBrowserWindowID(),
+              let runtime = await browserRuntime(for: windowID) else {
+            await registerControlInput("Browser reload skipped: no focused browser window")
+            return
+        }
+
+        await runtime.reload()
+        await registerControlInput("Browser reload")
+    }
+
+    public func goBackInFocusedBrowser() async {
+        guard let windowID = await targetBrowserWindowID(),
+              let runtime = await browserRuntime(for: windowID) else {
+            await registerControlInput("Browser back skipped: no focused browser window")
+            return
+        }
+
+        await runtime.goBack()
+        await registerControlInput("Browser back")
+    }
+
+    public func goForwardInFocusedBrowser() async {
+        guard let windowID = await targetBrowserWindowID(),
+              let runtime = await browserRuntime(for: windowID) else {
+            await registerControlInput("Browser forward skipped: no focused browser window")
+            return
+        }
+
+        await runtime.goForward()
+        await registerControlInput("Browser forward")
+    }
+
+    public func syncBrowserHostState(
+        windowID: PhaseZeroWindowID,
+        urlString: String?,
+        title: String?,
+        isLoading: Bool,
+        canGoBack: Bool,
+        canGoForward: Bool
+    ) async {
+        guard let runtime = await browserRuntime(for: windowID) else {
+            return
+        }
+
+        await runtime.syncWebViewState(
+            urlString: urlString,
+            title: title,
+            isLoading: isLoading,
+            canGoBack: canGoBack,
+            canGoForward: canGoForward
+        )
+    }
+
+    public func reportBrowserNavigationFailure(
+        windowID: PhaseZeroWindowID,
+        message: String
+    ) async {
+        guard let runtime = await browserRuntime(for: windowID) else {
+            return
+        }
+
+        await runtime.noteNavigationFailure(message: message)
+        await registerControlInput("Browser load failed: \(message)")
+    }
+
+    public func reportBrowserNavigationBlocked(
+        windowID: PhaseZeroWindowID,
+        urlString: String?,
+        reason: String
+    ) async {
+        guard let runtime = await browserRuntime(for: windowID) else {
+            return
+        }
+
+        await runtime.noteBlockedNavigation(urlString: urlString, reason: reason)
+        let urlSummary = urlString ?? "unknown URL"
+        await registerControlInput("Browser blocked navigation: \(urlSummary)")
+    }
+
+    public func acknowledgeBrowserNavigationCommand(
+        windowID: PhaseZeroWindowID,
+        commandID: Int
+    ) async {
+        guard let runtime = await browserRuntime(for: windowID) else {
+            return
+        }
+
+        await runtime.acknowledgeNavigationCommand(id: commandID)
+    }
+
     public func connectFocusedVNC(using request: PhaseZeroVNCConnectionRequest) async {
         guard !request.host.isEmpty else {
             await registerControlInput("VNC connect skipped: host missing")
@@ -451,6 +723,7 @@ public actor PhaseZeroCoordinator {
             return
         }
 
+        _ = await bootstrap.store.dispatch(.setActiveWorkMode(.vnc))
         await focusWindow(windowID)
         await registerControlInput("VNC connect: \(request.connectionSummary)")
         _ = await runtime.connect(using: request.runtimeConfiguration())
@@ -609,19 +882,92 @@ public actor PhaseZeroCoordinator {
                     )
                 }
             case .browser:
-                if await bootstrap.runtimes.handle(for: window.id) == nil {
-                    _ = await bootstrap.runtimes.register(kind: runtimeKind(for: window.kind), for: window.id)
+                if await bootstrap.runtimes.browserRuntime(for: window.id) == nil {
+                    let runtime = makeBrowserRuntime(windowID: window.id)
+                    _ = await bootstrap.runtimes.registerBrowser(runtime, for: window.id)
+                    await runtime.start()
+                    _ = await bootstrap.store.dispatch(
+                        .updateBrowserSurface(
+                            windowID: window.id,
+                            surface: await runtime.snapshot()
+                        )
+                    )
                 }
             }
         }
     }
 
+    private func targetFocusableWindowID() async -> WindowID? {
+        let snapshot = await bootstrap.store.currentSnapshot()
+        if let activeWindow = activeWorkWindow(in: snapshot) {
+            return activeWindow.id
+        }
+
+        if let focusedWindowID = snapshot.focusedWindowID {
+            return focusedWindowID
+        }
+
+        return snapshot.windows.last?.id
+    }
+
+    private func focusedWindow(in snapshot: PhaseZeroSnapshot) -> DesktopWindow? {
+        if let activeWindow = activeWorkWindow(in: snapshot) {
+            return activeWindow
+        }
+
+        if let focusedWindowID = snapshot.focusedWindowID {
+            return snapshot.windows.first(where: { $0.id == focusedWindowID })
+        }
+
+        return snapshot.windows.last
+    }
+
+    private func windowForKind(
+        _ kind: DesktopWindowKind,
+        in snapshot: PhaseZeroSnapshot
+    ) -> DesktopWindow? {
+        if let focusedWindowID = snapshot.focusedWindowID,
+           let focusedWindow = snapshot.windows.first(where: { $0.id == focusedWindowID && $0.kind == kind }) {
+            return focusedWindow
+        }
+
+        return snapshot.windows.last(where: { $0.kind == kind })
+    }
+
+    private func activeWorkWindow(in snapshot: PhaseZeroSnapshot) -> DesktopWindow? {
+        windowForKind(snapshot.activeWorkMode.windowKind, in: snapshot)
+    }
+
+    private func inputCaptureWindow(in snapshot: PhaseZeroSnapshot) -> DesktopWindow? {
+        switch snapshot.inputCaptureMode {
+        case .automatic:
+            return focusedWindow(in: snapshot)
+        case .terminal:
+            return windowForKind(.terminal, in: snapshot)
+        case .vnc:
+            return windowForKind(.vnc, in: snapshot)
+        }
+    }
+
+    private func targetVNCPointerWindowID(in snapshot: PhaseZeroSnapshot) -> DesktopWindow? {
+        switch snapshot.inputCaptureMode {
+        case .automatic:
+            return focusedWindow(in: snapshot)?.kind == .vnc
+                ? focusedWindow(in: snapshot)
+                : nil
+        case .terminal:
+            return nil
+        case .vnc:
+            return windowForKind(.vnc, in: snapshot)
+        }
+    }
+
     private func targetTerminalWindowID() async -> WindowID? {
         let snapshot = await bootstrap.store.currentSnapshot()
-
-        if let focusedWindowID = snapshot.focusedWindowID,
-           snapshot.windows.contains(where: { $0.id == focusedWindowID && $0.kind == .terminal }) {
-            return focusedWindowID
+        if snapshot.activeWorkMode == .ssh,
+           let activeWindow = activeWorkWindow(in: snapshot),
+           activeWindow.kind == .terminal {
+            return activeWindow.id
         }
 
         return snapshot.windows.last(where: { $0.kind == .terminal })?.id
@@ -659,12 +1005,34 @@ public actor PhaseZeroCoordinator {
         return runtime
     }
 
+    private func targetBrowserWindowID() async -> WindowID? {
+        let snapshot = await bootstrap.store.currentSnapshot()
+        if snapshot.activeWorkMode == .browser,
+           let activeWindow = activeWorkWindow(in: snapshot),
+           activeWindow.kind == .browser {
+            return activeWindow.id
+        }
+
+        return snapshot.windows.last(where: { $0.kind == .browser })?.id
+    }
+
+    private func browserRuntime(for windowID: WindowID) async -> BrowserSessionRuntime? {
+        if let runtime = await bootstrap.runtimes.browserRuntime(for: windowID) {
+            return runtime
+        }
+
+        let runtime = makeBrowserRuntime(windowID: windowID)
+        _ = await bootstrap.runtimes.registerBrowser(runtime, for: windowID)
+        await runtime.start()
+        return runtime
+    }
+
     private func targetVNCWindowID() async -> WindowID? {
         let snapshot = await bootstrap.store.currentSnapshot()
-
-        if let focusedWindowID = snapshot.focusedWindowID,
-           snapshot.windows.contains(where: { $0.id == focusedWindowID && $0.kind == .vnc }) {
-            return focusedWindowID
+        if snapshot.activeWorkMode == .vnc,
+           let activeWindow = activeWorkWindow(in: snapshot),
+           activeWindow.kind == .vnc {
+            return activeWindow.id
         }
 
         return snapshot.windows.last(where: { $0.kind == .vnc })?.id
@@ -689,6 +1057,12 @@ public actor PhaseZeroCoordinator {
     private func makeFilesRuntime(windowID: WindowID) -> FilesWorkspaceRuntime {
         FilesWorkspaceRuntime(windowID: windowID) { [store = bootstrap.store] surface in
             _ = await store.dispatch(.updateFilesSurface(windowID: windowID, surface: surface))
+        }
+    }
+
+    private func makeBrowserRuntime(windowID: WindowID) -> BrowserSessionRuntime {
+        BrowserSessionRuntime(windowID: windowID) { [store = bootstrap.store] surface in
+            _ = await store.dispatch(.updateBrowserSurface(windowID: windowID, surface: surface))
         }
     }
 

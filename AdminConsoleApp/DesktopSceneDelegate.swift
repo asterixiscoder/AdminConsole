@@ -14,14 +14,12 @@ final class DesktopSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         Task {
             await AppEnvironment.phaseZero.startIfNeeded()
-            await AppEnvironment.phaseZero.setExternalDisplayConnected(
-                true,
-                size: windowScene.screen.bounds.size,
-                scale: windowScene.screen.scale
-            )
+            await updateDisplayMetrics(for: windowScene)
         }
 
         let window = UIWindow(windowScene: windowScene)
+        window.frame = windowScene.coordinateSpace.bounds
+        window.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         window.rootViewController = DesktopRootViewController()
         window.makeKeyAndVisible()
         self.window = window
@@ -33,6 +31,16 @@ final class DesktopSceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
+    func sceneDidActivate(_ scene: UIScene) {
+        guard let windowScene = scene as? UIWindowScene else {
+            return
+        }
+
+        Task {
+            await updateDisplayMetrics(for: windowScene)
+        }
+    }
+
     func windowScene(
         _ windowScene: UIWindowScene,
         didUpdate previousCoordinateSpace: UICoordinateSpace,
@@ -40,11 +48,26 @@ final class DesktopSceneDelegate: UIResponder, UIWindowSceneDelegate {
         traitCollection previousTraitCollection: UITraitCollection
     ) {
         Task {
-            await AppEnvironment.phaseZero.setExternalDisplayConnected(
-                true,
-                size: windowScene.screen.bounds.size,
-                scale: windowScene.screen.scale
-            )
+            await updateDisplayMetrics(for: windowScene)
         }
+    }
+
+    private func updateDisplayMetrics(for windowScene: UIWindowScene) async {
+        let sceneBounds = windowScene.coordinateSpace.bounds
+        window?.frame = sceneBounds
+        let windowBounds = window?.bounds ?? sceneBounds
+        let pointSize = CGSize(
+            width: max(sceneBounds.width, windowBounds.width),
+            height: max(sceneBounds.height, windowBounds.height)
+        )
+
+        // Prefer physical-ish pixel mapping for better SSH/VNC sizing on external monitors.
+        let effectiveScale = max(windowScene.screen.nativeScale, windowScene.screen.scale)
+
+        await AppEnvironment.phaseZero.setExternalDisplayConnected(
+            true,
+            size: pointSize,
+            scale: effectiveScale
+        )
     }
 }

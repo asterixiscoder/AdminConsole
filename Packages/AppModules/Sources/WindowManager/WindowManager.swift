@@ -38,6 +38,10 @@ public enum WindowManager {
         )
     }
 
+    public static func maximizedFrame() -> NormalizedRect {
+        NormalizedRect(x: 0.0, y: 0.0, width: 1.0, height: 1.0)
+    }
+
     public static func fit(_ cursor: CursorState) -> CursorState {
         CursorState(
             x: clamp(cursor.x, lower: 0.0, upper: 1.0),

@@ -1,17 +1,23 @@
 import UniformTypeIdentifiers
 import UIKit
 import WebKit
+import InputKit
 
-final class ControlRootViewController: UIViewController, UITextFieldDelegate, UIDocumentPickerDelegate {
+final class ControlRootViewController: UIViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIGestureRecognizerDelegate {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
+    private let workModeControl = UISegmentedControl(items: ["SSH", "VNC", "Browser"])
     private let summaryLabel = UILabel()
     private let statusLabel = UILabel()
     private let focusedLabel = UILabel()
     private let cursorLabel = UILabel()
     private let inputLabel = UILabel()
+    private let inputCaptureStatusLabel = UILabel()
+    private let inputCaptureControl = UISegmentedControl(items: ["Auto", "Terminal", "VNC"])
     private let terminalStatusLabel = UILabel()
     private let terminalPreviewView = UITextView()
+    private let browserStatusLabel = UILabel()
+    private let browserPreviewView = UITextView()
     private let filesStatusLabel = UILabel()
     private let filesPreviewView = UITextView()
     private let vncStatusLabel = UILabel()
@@ -21,7 +27,16 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private let renameEntryField = UITextField()
     private let trackpadView = UIView()
     private let trackpadCursor = UIView()
+    private let miniDockContainer = UIView()
+    private let miniDockContentStack = UIStackView()
+    private let miniDockToggleButton = UIButton(type: .system)
     private let keyboardHintLabel = UILabel()
+    private let softModifierStatusLabel = UILabel()
+    private let softKeyboardPresetControl = UISegmentedControl(items: ["Terminal", "VNC"])
+    private let softControlButton = UIButton(type: .system)
+    private let softAlternateButton = UIButton(type: .system)
+    private let terminalDockStack = UIStackView()
+    private let vncDockStack = UIStackView()
     private let hostField = UITextField()
     private let portField = UITextField()
     private let usernameField = UITextField()
@@ -31,12 +46,29 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private let vncPortField = UITextField()
     private let vncPasswordField = UITextField()
     private let vncInputField = UITextField()
+    private let browserURLField = UITextField()
+    private let displayWidthField = UITextField()
+    private let displayHeightField = UITextField()
+    private let displayScaleField = UITextField()
+    private let displayStatusLabel = UILabel()
     private let vncQualityControl = UISegmentedControl(items: ["Low", "Balanced", "High"])
     private let vncTrackpadSwitch = UISwitch()
     private let vncDragButton = UIButton(type: .system)
+    private var softControlModifierLatched = false
+    private var softAlternateModifierLatched = false
+    private weak var activeSoftRepeatButton: SoftRepeatKeyButton?
+    private var softRepeatDelayWorkItem: DispatchWorkItem?
+    private var softRepeatTimer: Timer?
+    private var miniDockCollapsedWidthConstraint: NSLayoutConstraint?
+    private var miniDockExpandedWidthConstraint: NSLayoutConstraint?
+    private var isMiniDockCollapsed = false
     private var updatesTask: Task<Void, Never>?
     private var latestSnapshot: PhaseZeroSnapshot?
     private var isAwaitingFilesExport = false
+    private var sshCardView: UIView?
+    private var vncCardView: UIView?
+    private var browserCardView: UIView?
+    private var filesCardView: UIView?
 
     override var canBecomeFirstResponder: Bool {
         true
@@ -59,7 +91,10 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         summaryLabel.font = .preferredFont(forTextStyle: .title3)
         summaryLabel.numberOfLines = 0
 
-        [statusLabel, focusedLabel, cursorLabel, inputLabel, terminalStatusLabel, filesStatusLabel, vncStatusLabel].forEach { label in
+        workModeControl.selectedSegmentIndex = 0
+        workModeControl.addTarget(self, action: #selector(workModeChanged), for: .valueChanged)
+
+        [statusLabel, focusedLabel, cursorLabel, inputLabel, inputCaptureStatusLabel, terminalStatusLabel, browserStatusLabel, filesStatusLabel, vncStatusLabel, displayStatusLabel, softModifierStatusLabel].forEach { label in
             label.font = .preferredFont(forTextStyle: .body)
             label.numberOfLines = 0
         }
@@ -74,6 +109,17 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         terminalPreviewView.textContainerInset = .zero
         terminalPreviewView.textContainer.lineFragmentPadding = 0
         terminalPreviewView.heightAnchor.constraint(equalToConstant: 180).isActive = true
+
+        browserPreviewView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        browserPreviewView.textColor = .secondaryLabel
+        browserPreviewView.text = "No browser window selected."
+        browserPreviewView.backgroundColor = .clear
+        browserPreviewView.isEditable = false
+        browserPreviewView.isSelectable = true
+        browserPreviewView.isScrollEnabled = true
+        browserPreviewView.textContainerInset = .zero
+        browserPreviewView.textContainer.lineFragmentPadding = 0
+        browserPreviewView.heightAnchor.constraint(equalToConstant: 140).isActive = true
 
         filesPreviewView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         filesPreviewView.textColor = .secondaryLabel
@@ -106,8 +152,14 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         Cmd+2 Files
         Cmd+3 Browser
         Cmd+4 VNC
+        Cmd+5 Capture Auto
+        Cmd+6 Capture Terminal
+        Cmd+7 Capture VNC
+        Cmd+M Toggle fullscreen focused window
         Cmd+V Paste clipboard to terminal
         Arrow keys move cursor unless terminal or VNC focus is active
+        Soft keyboard dock presets: Terminal / VNC
+        Ctrl/Alt are latched modifiers, Enter/Backspace and arrows support hold-to-repeat
         Drag mode keeps the primary VNC mouse button pressed while you move
         """
         keyboardHintLabel.font = .preferredFont(forTextStyle: .footnote)
@@ -126,9 +178,11 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         trackpadCursor.layer.shadowOpacity = 0.3
         trackpadCursor.layer.shadowRadius = 8
         trackpadView.addSubview(trackpadCursor)
+        setupTrackpadMiniDock()
 
         let infoCard = makeCard(
             arrangedSubviews: [
+                workModeControl,
                 summaryLabel,
                 statusLabel,
                 focusedLabel,
@@ -138,18 +192,24 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
                 terminalPreviewView
             ]
         )
-        let trackpadCard = makeCard(arrangedSubviews: [trackpadView, keyboardHintLabel])
+        let trackpadCard = makeCard(arrangedSubviews: [trackpadView, makeSoftKeyboardControls(), keyboardHintLabel])
         let actionsCard = makeCard(arrangedSubviews: [makeButtonsRow()])
+        let displayCard = makeCard(arrangedSubviews: [makeDisplayControls()])
         let sshCard = makeCard(arrangedSubviews: [makeSSHControls()])
+        let browserCard = makeCard(arrangedSubviews: [makeBrowserControls()])
         let filesCard = makeCard(arrangedSubviews: [makeFilesControls()])
         let vncCard = makeCard(arrangedSubviews: [makeVNCControls()])
+        sshCardView = sshCard
+        vncCardView = vncCard
+        browserCardView = browserCard
+        filesCardView = filesCard
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.axis = .vertical
         stackView.spacing = 18
 
-        [infoCard, trackpadCard, actionsCard, sshCard, filesCard, vncCard].forEach(stackView.addArrangedSubview)
+        [infoCard, trackpadCard, actionsCard, displayCard, sshCard, browserCard, filesCard, vncCard].forEach(stackView.addArrangedSubview)
         scrollView.addSubview(stackView)
         view.addSubview(scrollView)
 
@@ -173,9 +233,14 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
         let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handleTrackpadPan(_:)))
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTrackpadTap))
+        panGesture.delegate = self
+        tapGesture.delegate = self
+        panGesture.cancelsTouchesInView = false
+        tapGesture.cancelsTouchesInView = false
         trackpadView.addGestureRecognizer(panGesture)
         trackpadView.addGestureRecognizer(tapGesture)
 
+        updateSoftModifierUI()
         startUpdates()
     }
 
@@ -195,6 +260,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
     deinit {
         updatesTask?.cancel()
+        stopSoftRepeat()
     }
 
     override var keyCommands: [UIKeyCommand]? {
@@ -203,6 +269,10 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             makeKeyCommand("2", modifiers: .command, action: #selector(openFiles), title: "Open Files"),
             makeKeyCommand("3", modifiers: .command, action: #selector(openBrowserWindow), title: "Open Browser"),
             makeKeyCommand("4", modifiers: .command, action: #selector(openVNC), title: "Open VNC"),
+            makeKeyCommand("5", modifiers: .command, action: #selector(setCaptureAutomatic), title: "Input Capture Automatic"),
+            makeKeyCommand("6", modifiers: .command, action: #selector(setCaptureTerminal), title: "Input Capture Terminal"),
+            makeKeyCommand("7", modifiers: .command, action: #selector(setCaptureVNC), title: "Input Capture VNC"),
+            makeKeyCommand("m", modifiers: .command, action: #selector(toggleMaximizeFocusedWindow), title: "Toggle Fullscreen Focused Window"),
             makeKeyCommand("v", modifiers: .command, action: #selector(pasteClipboardToTerminal), title: "Paste Clipboard to Terminal")
         ]
 
@@ -219,7 +289,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if let key = presses.compactMap(\.key).first {
             if routesHardwareKeyboardToTerminal,
-               let terminalInput = terminalInput(for: key) {
+               let terminalInput = routedKeyboardInput(for: key) {
                 Task {
                     await AppEnvironment.phaseZero.sendInputToFocusedTerminal(terminalInput)
                 }
@@ -227,7 +297,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             }
 
             if routesHardwareKeyboardToVNC,
-               let vncInput = terminalInput(for: key) {
+               let vncInput = routedKeyboardInput(for: key) {
                 Task {
                     await AppEnvironment.phaseZero.sendInputToFocusedVNC(vncInput)
                 }
@@ -262,10 +332,20 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     }
 
     private func apply(snapshot: PhaseZeroSnapshot) {
+        syncDisplayFieldsIfNeeded(snapshot: snapshot)
+        syncInputCaptureControlsIfNeeded(snapshot: snapshot)
+        syncSoftKeyboardPresetIfNeeded(snapshot: snapshot)
+        syncWorkModeControlIfNeeded(snapshot: snapshot)
+        applyVisibleCards(for: snapshot.activeWorkMode)
         statusLabel.text = """
         Revision: \(snapshot.revision)
         External display: \(snapshot.isExternalDisplayConnected ? "connected" : "disconnected")
         Resolution: \(Int(snapshot.displayProfile.width)) x \(Int(snapshot.displayProfile.height)) @ \(String(format: "%.1f", snapshot.displayProfile.scale))x
+        """
+        displayStatusLabel.text = """
+        Current profile:
+        \(Int(snapshot.displayProfile.width)) x \(Int(snapshot.displayProfile.height)) points
+        Effective pixels: \(Int(snapshot.displayProfile.width * snapshot.displayProfile.scale)) x \(Int(snapshot.displayProfile.height * snapshot.displayProfile.scale))
         """
 
         if let focusedID = snapshot.focusedWindowID,
@@ -275,10 +355,13 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             focusedLabel.text = "Focused window: none"
         }
 
+        inputCaptureStatusLabel.text = inputCaptureStatusText(snapshot: snapshot)
         cursorLabel.text = "Cursor: x \(String(format: "%.2f", snapshot.cursor.x)), y \(String(format: "%.2f", snapshot.cursor.y))"
         inputLabel.text = "Last input: \(snapshot.lastInputDescription)"
         terminalStatusLabel.text = terminalStatusText(snapshot: snapshot)
         terminalPreviewView.text = terminalPreview(snapshot: snapshot)
+        browserStatusLabel.text = browserStatusText(snapshot: snapshot)
+        browserPreviewView.text = browserPreview(snapshot: snapshot)
         filesStatusLabel.text = filesStatusText(snapshot: snapshot)
         filesPreviewView.text = filesPreview(snapshot: snapshot)
         vncStatusLabel.text = vncStatusText(snapshot: snapshot)
@@ -287,6 +370,75 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         updateVNCDragButton(snapshot: snapshot)
 
         applyTrackpadCursor(snapshot: snapshot)
+        updateSoftModifierUI()
+    }
+
+    private func syncDisplayFieldsIfNeeded(snapshot: PhaseZeroSnapshot) {
+        if !(displayWidthField.isEditing || displayHeightField.isEditing || displayScaleField.isEditing) {
+            displayWidthField.text = String(Int(snapshot.displayProfile.width))
+            displayHeightField.text = String(Int(snapshot.displayProfile.height))
+            displayScaleField.text = String(format: "%.2f", snapshot.displayProfile.scale)
+        }
+    }
+
+    private func syncInputCaptureControlsIfNeeded(snapshot: PhaseZeroSnapshot) {
+        let expectedIndex: Int
+        switch snapshot.inputCaptureMode {
+        case .automatic:
+            expectedIndex = 0
+        case .terminal:
+            expectedIndex = 1
+        case .vnc:
+            expectedIndex = 2
+        }
+
+        if inputCaptureControl.selectedSegmentIndex != expectedIndex {
+            inputCaptureControl.selectedSegmentIndex = expectedIndex
+        }
+    }
+
+    private func syncSoftKeyboardPresetIfNeeded(snapshot: PhaseZeroSnapshot) {
+        let expectedIndex: Int?
+        switch snapshot.inputCaptureMode {
+        case .automatic:
+            expectedIndex = nil
+        case .terminal:
+            expectedIndex = 0
+        case .vnc:
+            expectedIndex = 1
+        }
+
+        guard let expectedIndex,
+              softKeyboardPresetControl.selectedSegmentIndex != expectedIndex,
+              !softKeyboardPresetControl.isTracking else {
+            return
+        }
+
+        softKeyboardPresetControl.selectedSegmentIndex = expectedIndex
+        applySoftKeyboardPresetUI()
+    }
+
+    private func syncWorkModeControlIfNeeded(snapshot: PhaseZeroSnapshot) {
+        let expectedIndex: Int
+        switch snapshot.activeWorkMode {
+        case .ssh:
+            expectedIndex = 0
+        case .vnc:
+            expectedIndex = 1
+        case .browser:
+            expectedIndex = 2
+        }
+
+        if workModeControl.selectedSegmentIndex != expectedIndex {
+            workModeControl.selectedSegmentIndex = expectedIndex
+        }
+    }
+
+    private func applyVisibleCards(for mode: PhaseZeroWorkMode) {
+        sshCardView?.isHidden = mode != .ssh
+        vncCardView?.isHidden = mode != .vnc
+        browserCardView?.isHidden = mode != .browser
+        filesCardView?.isHidden = true
     }
 
     private func applyTrackpadCursor(snapshot: PhaseZeroSnapshot) {
@@ -297,6 +449,103 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         let x = snapshot.cursor.x * trackpadView.bounds.width
         let y = snapshot.cursor.y * trackpadView.bounds.height
         trackpadCursor.center = CGPoint(x: x, y: y)
+    }
+
+    private func setupTrackpadMiniDock() {
+        miniDockContainer.translatesAutoresizingMaskIntoConstraints = false
+        miniDockContainer.backgroundColor = UIColor.black.withAlphaComponent(0.38)
+        miniDockContainer.layer.cornerRadius = 12
+        miniDockContainer.layer.borderWidth = 1
+        miniDockContainer.layer.borderColor = UIColor.white.withAlphaComponent(0.16).cgColor
+        miniDockContainer.clipsToBounds = true
+
+        miniDockToggleButton.translatesAutoresizingMaskIntoConstraints = false
+        miniDockToggleButton.configuration = .plain()
+        miniDockToggleButton.configuration?.title = "×"
+        miniDockToggleButton.tintColor = .white
+        miniDockToggleButton.addTarget(self, action: #selector(toggleMiniDockCollapsed), for: .touchUpInside)
+
+        miniDockContentStack.translatesAutoresizingMaskIntoConstraints = false
+        miniDockContentStack.axis = .vertical
+        miniDockContentStack.spacing = 6
+
+        let editingRow = UIStackView()
+        editingRow.axis = .horizontal
+        editingRow.spacing = 6
+        editingRow.distribution = .fillEqually
+        editingRow.addArrangedSubview(makeMiniDockKeyButton(title: "Esc", payload: "\u{001B}", description: "Dock Esc"))
+        editingRow.addArrangedSubview(makeMiniDockKeyButton(title: "Tab", payload: "\t", description: "Dock Tab"))
+        editingRow.addArrangedSubview(makeMiniDockRepeatKeyButton(title: "⌫", payload: "\u{7F}", description: "Dock Backspace"))
+        editingRow.addArrangedSubview(makeMiniDockRepeatKeyButton(title: "↩", payload: "\n", description: "Dock Enter"))
+
+        let arrowsRow = UIStackView()
+        arrowsRow.axis = .horizontal
+        arrowsRow.spacing = 6
+        arrowsRow.distribution = .fillEqually
+        arrowsRow.addArrangedSubview(makeMiniDockRepeatKeyButton(title: "↑", payload: "\u{001B}[A", description: "Dock Arrow Up"))
+        arrowsRow.addArrangedSubview(makeMiniDockRepeatKeyButton(title: "↓", payload: "\u{001B}[B", description: "Dock Arrow Down"))
+        arrowsRow.addArrangedSubview(makeMiniDockRepeatKeyButton(title: "←", payload: "\u{001B}[D", description: "Dock Arrow Left"))
+        arrowsRow.addArrangedSubview(makeMiniDockRepeatKeyButton(title: "→", payload: "\u{001B}[C", description: "Dock Arrow Right"))
+
+        miniDockContentStack.addArrangedSubview(editingRow)
+        miniDockContentStack.addArrangedSubview(arrowsRow)
+
+        trackpadView.addSubview(miniDockContainer)
+        miniDockContainer.addSubview(miniDockToggleButton)
+        miniDockContainer.addSubview(miniDockContentStack)
+
+        miniDockCollapsedWidthConstraint = miniDockContainer.widthAnchor.constraint(equalToConstant: 44)
+        miniDockExpandedWidthConstraint = miniDockContainer.widthAnchor.constraint(equalToConstant: 212)
+        miniDockExpandedWidthConstraint?.isActive = true
+
+        NSLayoutConstraint.activate([
+            miniDockContainer.topAnchor.constraint(equalTo: trackpadView.topAnchor, constant: 10),
+            miniDockContainer.trailingAnchor.constraint(equalTo: trackpadView.trailingAnchor, constant: -10),
+            miniDockContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+
+            miniDockToggleButton.topAnchor.constraint(equalTo: miniDockContainer.topAnchor, constant: 4),
+            miniDockToggleButton.trailingAnchor.constraint(equalTo: miniDockContainer.trailingAnchor, constant: -4),
+            miniDockToggleButton.widthAnchor.constraint(equalToConstant: 32),
+            miniDockToggleButton.heightAnchor.constraint(equalToConstant: 32),
+
+            miniDockContentStack.leadingAnchor.constraint(equalTo: miniDockContainer.leadingAnchor, constant: 8),
+            miniDockContentStack.trailingAnchor.constraint(equalTo: miniDockContainer.trailingAnchor, constant: -8),
+            miniDockContentStack.topAnchor.constraint(equalTo: miniDockToggleButton.bottomAnchor, constant: 2),
+            miniDockContentStack.bottomAnchor.constraint(equalTo: miniDockContainer.bottomAnchor, constant: -8)
+        ])
+
+        applyMiniDockCollapsedState()
+    }
+
+    private func makeMiniDockKeyButton(title: String, payload: String, description: String) -> UIButton {
+        let button = UIButton(type: .system)
+        button.configuration = .tinted()
+        button.configuration?.title = title
+        button.configuration?.baseBackgroundColor = UIColor.white.withAlphaComponent(0.14)
+        button.configuration?.baseForegroundColor = .white
+        button.addAction(
+            UIAction { [weak self] _ in
+                self?.sendSoftKeyPayload(payload, description: description, registerEvent: false)
+            },
+            for: .touchUpInside
+        )
+        return button
+    }
+
+    private func makeMiniDockRepeatKeyButton(title: String, payload: String, description: String) -> UIButton {
+        let button = SoftRepeatKeyButton(type: .system)
+        button.configuration = .tinted()
+        button.configuration?.title = title
+        button.configuration?.baseBackgroundColor = UIColor.white.withAlphaComponent(0.14)
+        button.configuration?.baseForegroundColor = .white
+        button.payload = payload
+        button.payloadDescription = description
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchDown(_:)), for: .touchDown)
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchUpInside)
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchUpOutside)
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchCancel)
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchDragExit)
+        return button
     }
 
     private func makeCard(arrangedSubviews: [UIView]) -> UIView {
@@ -327,11 +576,25 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         stack.axis = .vertical
         stack.spacing = 12
 
+        let captureLabel = UILabel()
+        captureLabel.font = .preferredFont(forTextStyle: .headline)
+        captureLabel.text = "Input Capture"
+
+        inputCaptureControl.selectedSegmentIndex = 0
+        inputCaptureControl.addTarget(self, action: #selector(inputCaptureModeChanged), for: .valueChanged)
+        inputCaptureStatusLabel.text = "Input capture: Automatic"
+        inputCaptureStatusLabel.textColor = .secondaryLabel
+
+        stack.addArrangedSubview(captureLabel)
+        stack.addArrangedSubview(inputCaptureControl)
+        stack.addArrangedSubview(inputCaptureStatusLabel)
+
         let buttons: [(String, Selector)] = [
             ("Open Terminal Window", #selector(openTerminal)),
             ("Open Files Window", #selector(openFiles)),
             ("Open Browser Window", #selector(openBrowserWindow)),
-            ("Open VNC Window", #selector(openVNC))
+            ("Open VNC Window", #selector(openVNC)),
+            ("Toggle Fullscreen Focused Window", #selector(toggleMaximizeFocusedWindow))
         ]
 
         for item in buttons {
@@ -341,6 +604,221 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             button.addTarget(self, action: item.1, for: .touchUpInside)
             stack.addArrangedSubview(button)
         }
+
+        return stack
+    }
+
+    private func makeSoftKeyboardControls() -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 8
+
+        let titleLabel = UILabel()
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.text = "Soft Keyboard"
+
+        softModifierStatusLabel.textColor = .secondaryLabel
+        softModifierStatusLabel.text = "Modifiers: none"
+
+        softKeyboardPresetControl.selectedSegmentIndex = 0
+        softKeyboardPresetControl.addTarget(self, action: #selector(softKeyboardPresetChanged), for: .valueChanged)
+
+        let modifiersRow = UIStackView()
+        modifiersRow.axis = .horizontal
+        modifiersRow.spacing = 8
+        modifiersRow.distribution = .fillEqually
+
+        softControlButton.configuration = .tinted()
+        softControlButton.configuration?.title = "Ctrl"
+        softControlButton.addTarget(self, action: #selector(toggleSoftControlModifier), for: .touchUpInside)
+
+        softAlternateButton.configuration = .tinted()
+        softAlternateButton.configuration?.title = "Alt"
+        softAlternateButton.addTarget(self, action: #selector(toggleSoftAlternateModifier), for: .touchUpInside)
+
+        modifiersRow.addArrangedSubview(softControlButton)
+        modifiersRow.addArrangedSubview(softAlternateButton)
+
+        terminalDockStack.axis = .vertical
+        terminalDockStack.spacing = 8
+        vncDockStack.axis = .vertical
+        vncDockStack.spacing = 8
+
+        let terminalEditingRow = makeSoftEditingRow()
+        let terminalFnRow1 = makeFunctionRow(indices: [1, 2, 3, 4])
+        let terminalFnRow2 = makeFunctionRow(indices: [5, 6, 7, 8])
+        let terminalFnRow3 = makeFunctionRow(indices: [9, 10, 11, 12])
+        let terminalComboRow = makeSoftCombosRow()
+        [terminalEditingRow, terminalComboRow, terminalFnRow1, terminalFnRow2, terminalFnRow3].forEach(terminalDockStack.addArrangedSubview)
+
+        let vncEditingRow = makeSoftEditingRow()
+        let vncArrowsRow = makeArrowsRow()
+        let vncFunctionRow = makeFunctionRow(indices: [1, 2, 11, 12])
+        let vncDesktopRow = makeVNCDesktopRow()
+        [vncEditingRow, vncArrowsRow, vncFunctionRow, vncDesktopRow].forEach(vncDockStack.addArrangedSubview)
+
+        applySoftKeyboardPresetUI()
+
+        [titleLabel, softKeyboardPresetControl, softModifierStatusLabel, modifiersRow, terminalDockStack, vncDockStack].forEach(stack.addArrangedSubview)
+        return stack
+    }
+
+    private func makeSoftEditingRow() -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.spacing = 8
+        row.distribution = .fillEqually
+        row.addArrangedSubview(makeSoftKeyButton(title: "Esc", payload: "\u{001B}", description: "Esc"))
+        row.addArrangedSubview(makeSoftKeyButton(title: "Tab", payload: "\t", description: "Tab"))
+        row.addArrangedSubview(makeSoftRepeatKeyButton(title: "⌫", payload: "\u{7F}", description: "Backspace"))
+        row.addArrangedSubview(makeSoftRepeatKeyButton(title: "↩", payload: "\n", description: "Enter"))
+        return row
+    }
+
+    private func makeArrowsRow() -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.spacing = 8
+        row.distribution = .fillEqually
+        row.addArrangedSubview(makeSoftRepeatKeyButton(title: "↑", payload: "\u{001B}[A", description: "Arrow Up"))
+        row.addArrangedSubview(makeSoftRepeatKeyButton(title: "↓", payload: "\u{001B}[B", description: "Arrow Down"))
+        row.addArrangedSubview(makeSoftRepeatKeyButton(title: "←", payload: "\u{001B}[D", description: "Arrow Left"))
+        row.addArrangedSubview(makeSoftRepeatKeyButton(title: "→", payload: "\u{001B}[C", description: "Arrow Right"))
+        return row
+    }
+
+    private func makeVNCDesktopRow() -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.spacing = 8
+        row.distribution = .fillEqually
+
+        row.addArrangedSubview(makeSoftComboButton(title: "Alt+Tab", payload: "\u{001B}\t", description: "Alt+Tab"))
+        row.addArrangedSubview(makeSoftKeyButton(title: "PgUp", payload: "\u{001B}[5~", description: "Page Up"))
+        row.addArrangedSubview(makeSoftKeyButton(title: "PgDn", payload: "\u{001B}[6~", description: "Page Down"))
+        row.addArrangedSubview(makeSoftComboButton(title: "Ctrl+C", payload: "\u{03}", description: "Ctrl+C"))
+        return row
+    }
+
+    private func makeFunctionRow(indices: [Int]) -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.spacing = 8
+        row.distribution = .fillEqually
+        for index in indices {
+            row.addArrangedSubview(
+                makeSoftKeyButton(
+                    title: "F\(index)",
+                    payload: functionKeySequence(index: index),
+                    description: "F\(index)"
+                )
+            )
+        }
+        return row
+    }
+
+    private func makeSoftKeyButton(title: String, payload: String, description: String) -> UIButton {
+        let button = UIButton(type: .system)
+        button.configuration = .tinted()
+        button.configuration?.title = title
+        button.addAction(
+            UIAction { [weak self] _ in
+                self?.sendSoftKeyPayload(payload, description: description)
+            },
+            for: .touchUpInside
+        )
+        return button
+    }
+
+    private func makeSoftCombosRow() -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.spacing = 8
+        row.distribution = .fillEqually
+
+        row.addArrangedSubview(makeSoftComboButton(title: "Ctrl+C", payload: "\u{03}", description: "Ctrl+C"))
+        row.addArrangedSubview(makeSoftComboButton(title: "Ctrl+L", payload: "\u{0C}", description: "Ctrl+L"))
+        row.addArrangedSubview(makeSoftComboButton(title: "Ctrl+D", payload: "\u{04}", description: "Ctrl+D"))
+        row.addArrangedSubview(makeSoftComboButton(title: "Alt+Tab", payload: "\u{001B}\t", description: "Alt+Tab"))
+        return row
+    }
+
+    private func makeSoftComboButton(title: String, payload: String, description: String) -> UIButton {
+        let button = UIButton(type: .system)
+        button.configuration = .plain()
+        button.configuration?.title = title
+        button.addAction(
+            UIAction { [weak self] _ in
+                self?.sendSoftKeyPayload(
+                    payload,
+                    description: description,
+                    registerEvent: true,
+                    applyLatchedModifiers: false
+                )
+            },
+            for: .touchUpInside
+        )
+        return button
+    }
+
+    private func makeSoftRepeatKeyButton(title: String, payload: String, description: String) -> UIButton {
+        let button = SoftRepeatKeyButton(type: .system)
+        button.configuration = .tinted()
+        button.configuration?.title = title
+        button.payload = payload
+        button.payloadDescription = description
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchDown(_:)), for: .touchDown)
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchUpInside)
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchUpOutside)
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchCancel)
+        button.addTarget(self, action: #selector(handleSoftRepeatTouchUp(_:)), for: .touchDragExit)
+        return button
+    }
+
+    private func makeDisplayControls() -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+
+        let titleLabel = UILabel()
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.numberOfLines = 0
+        titleLabel.text = "External Display Profile"
+
+        configureField(displayWidthField, placeholder: "Width (points)", keyboardType: .decimalPad)
+        configureField(displayHeightField, placeholder: "Height (points)", keyboardType: .decimalPad)
+        configureField(displayScaleField, placeholder: "Scale (e.g. 2.0)", keyboardType: .decimalPad)
+
+        let buttonsRow = UIStackView()
+        buttonsRow.axis = .horizontal
+        buttonsRow.spacing = 8
+        buttonsRow.distribution = .fillEqually
+
+        let applyButton = UIButton(type: .system)
+        applyButton.configuration = .filled()
+        applyButton.configuration?.title = "Apply Profile"
+        applyButton.addTarget(self, action: #selector(applyDisplayProfileOverride), for: .touchUpInside)
+
+        let presetButton = UIButton(type: .system)
+        presetButton.configuration = .tinted()
+        presetButton.configuration?.title = "Preset 1080p"
+        presetButton.addTarget(self, action: #selector(apply1080pDisplayPreset), for: .touchUpInside)
+
+        let fitButton = UIButton(type: .system)
+        fitButton.configuration = .tinted()
+        fitButton.configuration?.title = "Fit to External"
+        fitButton.addTarget(self, action: #selector(fitDisplayToExternalScene), for: .touchUpInside)
+
+        [applyButton, presetButton, fitButton].forEach(buttonsRow.addArrangedSubview)
+
+        [
+            titleLabel,
+            displayStatusLabel,
+            displayWidthField,
+            displayHeightField,
+            displayScaleField,
+            buttonsRow
+        ].forEach(stack.addArrangedSubview)
 
         return stack
     }
@@ -496,6 +974,57 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             editControls,
             filesEntriesStack,
             filesPreviewView
+        ].forEach(stack.addArrangedSubview)
+
+        return stack
+    }
+
+    private func makeBrowserControls() -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 12
+
+        let titleLabel = UILabel()
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.numberOfLines = 0
+        titleLabel.text = "Browser"
+
+        configureField(browserURLField, placeholder: "URL or host (focused browser)")
+        browserURLField.returnKeyType = .go
+
+        let controls = UIStackView()
+        controls.axis = .horizontal
+        controls.spacing = 8
+        controls.distribution = .fillEqually
+
+        let navigateButton = UIButton(type: .system)
+        navigateButton.configuration = .filled()
+        navigateButton.configuration?.title = "Navigate"
+        navigateButton.addTarget(self, action: #selector(navigateFocusedBrowser), for: .touchUpInside)
+
+        let reloadButton = UIButton(type: .system)
+        reloadButton.configuration = .tinted()
+        reloadButton.configuration?.title = "Reload"
+        reloadButton.addTarget(self, action: #selector(reloadFocusedBrowser), for: .touchUpInside)
+
+        let backButton = UIButton(type: .system)
+        backButton.configuration = .plain()
+        backButton.configuration?.title = "Back"
+        backButton.addTarget(self, action: #selector(goBackInFocusedBrowser), for: .touchUpInside)
+
+        let forwardButton = UIButton(type: .system)
+        forwardButton.configuration = .plain()
+        forwardButton.configuration?.title = "Forward"
+        forwardButton.addTarget(self, action: #selector(goForwardInFocusedBrowser), for: .touchUpInside)
+
+        [navigateButton, reloadButton, backButton, forwardButton].forEach(controls.addArrangedSubview)
+
+        [
+            titleLabel,
+            browserStatusLabel,
+            browserURLField,
+            controls,
+            browserPreviewView
         ].forEach(stack.addArrangedSubview)
 
         return stack
@@ -665,17 +1194,19 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     @objc
     private func handleTrackpadPan(_ gesture: UIPanGestureRecognizer) {
         let translation = gesture.translation(in: trackpadView)
-        let deltaX = Double(translation.x / max(trackpadView.bounds.width, 1)) * 0.6
-        let deltaY = Double(translation.y / max(trackpadView.bounds.height, 1)) * 0.6
 
         gesture.setTranslation(.zero, in: trackpadView)
 
         Task {
-            await AppEnvironment.phaseZero.moveCursor(deltaX: deltaX, deltaY: deltaY)
-            if self.routesPointerToVNC {
-                await AppEnvironment.phaseZero.movePointerInFocusedVNC(deltaX: deltaX, deltaY: deltaY)
+            await AppEnvironment.phaseZero.handlePointerPan(
+                translation: translation,
+                surfaceSize: trackpadView.bounds.size,
+                source: .touchTrackpad
+            )
+
+            if gesture.state == .ended || gesture.state == .cancelled {
+                await AppEnvironment.phaseZero.registerControlInput("Trackpad pan")
             }
-            await AppEnvironment.phaseZero.registerControlInput("Trackpad pan")
         }
     }
 
@@ -1015,6 +1546,7 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private func openTerminal() {
         Task {
             await AppEnvironment.phaseZero.openWindow(.terminal)
+            await AppEnvironment.phaseZero.setActiveWorkMode(.ssh)
             await AppEnvironment.phaseZero.registerControlInput("Open terminal window")
         }
     }
@@ -1031,7 +1563,63 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private func openBrowserWindow() {
         Task {
             await AppEnvironment.phaseZero.openWindow(.browser)
+            await AppEnvironment.phaseZero.setActiveWorkMode(.browser)
             await AppEnvironment.phaseZero.registerControlInput("Open browser window")
+        }
+    }
+
+    @objc
+    private func navigateFocusedBrowser() {
+        let address = browserURLField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !address.isEmpty else {
+            Task {
+                await AppEnvironment.phaseZero.registerControlInput("Browser navigate skipped: URL is empty")
+            }
+            return
+        }
+
+        guard let normalizedURLString = normalizedBrowserAddress(address) else {
+            setBrowserAddressValidationState(isValid: false)
+            Task {
+                await AppEnvironment.phaseZero.registerControlInput("Browser navigate skipped: invalid address")
+            }
+            return
+        }
+
+        if !isAllowedBrowserAddress(normalizedURLString) {
+            setBrowserAddressValidationState(isValid: false)
+            Task {
+                await AppEnvironment.phaseZero.registerControlInput("Browser navigate blocked: only http/https are allowed")
+            }
+            browserURLField.text = normalizedURLString
+            return
+        }
+
+        setBrowserAddressValidationState(isValid: true)
+        browserURLField.text = normalizedURLString
+        Task {
+            await AppEnvironment.phaseZero.navigateFocusedBrowser(to: normalizedURLString)
+        }
+    }
+
+    @objc
+    private func reloadFocusedBrowser() {
+        Task {
+            await AppEnvironment.phaseZero.reloadFocusedBrowser()
+        }
+    }
+
+    @objc
+    private func goBackInFocusedBrowser() {
+        Task {
+            await AppEnvironment.phaseZero.goBackInFocusedBrowser()
+        }
+    }
+
+    @objc
+    private func goForwardInFocusedBrowser() {
+        Task {
+            await AppEnvironment.phaseZero.goForwardInFocusedBrowser()
         }
     }
 
@@ -1039,8 +1627,284 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private func openVNC() {
         Task {
             await AppEnvironment.phaseZero.openWindow(.vnc)
+            await AppEnvironment.phaseZero.setActiveWorkMode(.vnc)
             await AppEnvironment.phaseZero.registerControlInput("Open VNC window")
         }
+    }
+
+    @objc
+    private func toggleMaximizeFocusedWindow() {
+        Task {
+            await AppEnvironment.phaseZero.toggleMaximizeFocusedWindow()
+        }
+    }
+
+    @objc
+    private func inputCaptureModeChanged() {
+        let mode: PhaseZeroInputCaptureMode
+        switch inputCaptureControl.selectedSegmentIndex {
+        case 1:
+            mode = .terminal
+        case 2:
+            mode = .vnc
+        default:
+            mode = .automatic
+        }
+
+        Task {
+            await AppEnvironment.phaseZero.setInputCaptureMode(mode)
+        }
+    }
+
+    @objc
+    private func setCaptureAutomatic() {
+        inputCaptureControl.selectedSegmentIndex = 0
+        inputCaptureModeChanged()
+    }
+
+    @objc
+    private func setCaptureTerminal() {
+        inputCaptureControl.selectedSegmentIndex = 1
+        inputCaptureModeChanged()
+    }
+
+    @objc
+    private func setCaptureVNC() {
+        inputCaptureControl.selectedSegmentIndex = 2
+        inputCaptureModeChanged()
+    }
+
+    @objc
+    private func workModeChanged() {
+        let mode: PhaseZeroWorkMode
+        switch workModeControl.selectedSegmentIndex {
+        case 1:
+            mode = .vnc
+        case 2:
+            mode = .browser
+        default:
+            mode = .ssh
+        }
+
+        Task {
+            await AppEnvironment.phaseZero.setActiveWorkMode(mode)
+        }
+    }
+
+    @objc
+    private func toggleSoftControlModifier() {
+        softControlModifierLatched.toggle()
+        updateSoftModifierUI()
+    }
+
+    @objc
+    private func toggleSoftAlternateModifier() {
+        softAlternateModifierLatched.toggle()
+        updateSoftModifierUI()
+    }
+
+    @objc
+    private func toggleMiniDockCollapsed() {
+        isMiniDockCollapsed.toggle()
+        applyMiniDockCollapsedState()
+    }
+
+    @objc
+    private func softKeyboardPresetChanged() {
+        applySoftKeyboardPresetUI()
+        let presetTitle = softKeyboardPresetControl.selectedSegmentIndex == 1 ? "VNC" : "Terminal"
+        Task {
+            await AppEnvironment.phaseZero.registerControlInput("Soft keyboard preset: \(presetTitle)")
+        }
+    }
+
+    @objc
+    private func apply1080pDisplayPreset() {
+        displayWidthField.text = "1920"
+        displayHeightField.text = "1080"
+        displayScaleField.text = "1.00"
+        applyDisplayProfileOverride()
+    }
+
+    @objc
+    private func applyDisplayProfileOverride() {
+        let width = Double(displayWidthField.text ?? "") ?? 0
+        let height = Double(displayHeightField.text ?? "") ?? 0
+        let scale = Double(displayScaleField.text ?? "") ?? 0
+
+        guard width > 0, height > 0, scale > 0 else {
+            Task {
+                await AppEnvironment.phaseZero.registerControlInput("Display override skipped: width/height/scale must be > 0")
+            }
+            return
+        }
+
+        Task {
+            await AppEnvironment.phaseZero.overrideDisplayProfile(width: width, height: height, scale: scale)
+        }
+    }
+
+    @objc
+    private func fitDisplayToExternalScene() {
+        Task {
+            await AppEnvironment.phaseZero.fitDisplayProfileToExternalScene()
+        }
+    }
+
+    private func updateSoftModifierUI() {
+        let active: [String] = [
+            softControlModifierLatched ? "Ctrl" : nil,
+            softAlternateModifierLatched ? "Alt" : nil
+        ].compactMap { $0 }
+
+        softModifierStatusLabel.text = "Modifiers: " + (active.isEmpty ? "none" : active.joined(separator: " + "))
+        softControlButton.configuration?.baseBackgroundColor = softControlModifierLatched ? .systemBlue : nil
+        softControlButton.configuration?.baseForegroundColor = softControlModifierLatched ? .white : nil
+        softAlternateButton.configuration?.baseBackgroundColor = softAlternateModifierLatched ? .systemBlue : nil
+        softAlternateButton.configuration?.baseForegroundColor = softAlternateModifierLatched ? .white : nil
+    }
+
+    private func applySoftKeyboardPresetUI() {
+        let isVNC = softKeyboardPresetControl.selectedSegmentIndex == 1
+        terminalDockStack.isHidden = isVNC
+        vncDockStack.isHidden = !isVNC
+    }
+
+    private func applyMiniDockCollapsedState() {
+        miniDockContentStack.isHidden = isMiniDockCollapsed
+        miniDockExpandedWidthConstraint?.isActive = !isMiniDockCollapsed
+        miniDockCollapsedWidthConstraint?.isActive = isMiniDockCollapsed
+        miniDockToggleButton.configuration?.title = isMiniDockCollapsed ? "⌨︎" : "×"
+    }
+
+    private func sendSoftKeyPayload(
+        _ payload: String,
+        description: String,
+        registerEvent: Bool = true,
+        applyLatchedModifiers: Bool = true
+    ) {
+        let routedPayload = applyLatchedModifiers ? applyLatchedSoftModifiers(to: payload) : payload
+        let routing = keyboardRouting(for: latestSnapshot)
+
+        Task {
+            if routing.routeToTerminal {
+                await AppEnvironment.phaseZero.sendInputToFocusedTerminal(routedPayload)
+                if registerEvent {
+                    await AppEnvironment.phaseZero.registerControlInput("Soft key: \(description) -> Terminal")
+                }
+                return
+            }
+
+            if routing.routeToVNC {
+                await AppEnvironment.phaseZero.sendInputToFocusedVNC(routedPayload)
+                if registerEvent {
+                    await AppEnvironment.phaseZero.registerControlInput("Soft key: \(description) -> VNC")
+                }
+                return
+            }
+
+            if registerEvent {
+                await AppEnvironment.phaseZero.registerControlInput("Soft key ignored: no Terminal/VNC capture target")
+            }
+        }
+    }
+
+    private func applyLatchedSoftModifiers(to payload: String) -> String {
+        var result = payload
+
+        if softControlModifierLatched,
+           payload.count == 1,
+           let scalar = payload.unicodeScalars.first {
+            let value = scalar.value
+            if value >= 0x61 && value <= 0x7A,
+               let controlCode = UnicodeScalar(value - 0x60) {
+                result = String(controlCode)
+            } else if value >= 0x41 && value <= 0x5A,
+                      let controlCode = UnicodeScalar(value - 0x40) {
+                result = String(controlCode)
+            }
+        }
+
+        if softAlternateModifierLatched {
+            result = "\u{001B}" + result
+        }
+
+        return result
+    }
+
+    private func functionKeySequence(index: Int) -> String {
+        switch index {
+        case 1:
+            return "\u{001B}OP"
+        case 2:
+            return "\u{001B}OQ"
+        case 3:
+            return "\u{001B}OR"
+        case 4:
+            return "\u{001B}OS"
+        case 5:
+            return "\u{001B}[15~"
+        case 6:
+            return "\u{001B}[17~"
+        case 7:
+            return "\u{001B}[18~"
+        case 8:
+            return "\u{001B}[19~"
+        case 9:
+            return "\u{001B}[20~"
+        case 10:
+            return "\u{001B}[21~"
+        case 11:
+            return "\u{001B}[23~"
+        case 12:
+            return "\u{001B}[24~"
+        default:
+            return ""
+        }
+    }
+
+    @objc
+    private func handleSoftRepeatTouchDown(_ sender: SoftRepeatKeyButton) {
+        stopSoftRepeat()
+
+        activeSoftRepeatButton = sender
+        sendSoftKeyPayload(sender.payload, description: sender.payloadDescription)
+
+        let delayWorkItem = DispatchWorkItem { [weak self, weak sender] in
+            guard let self, let sender else {
+                return
+            }
+
+            self.softRepeatTimer?.invalidate()
+            let timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self, weak sender] _ in
+                guard let self, let sender, self.activeSoftRepeatButton === sender else {
+                    return
+                }
+                self.sendSoftKeyPayload(
+                    sender.payload,
+                    description: sender.payloadDescription,
+                    registerEvent: false,
+                    applyLatchedModifiers: true
+                )
+            }
+            self.softRepeatTimer = timer
+        }
+
+        softRepeatDelayWorkItem = delayWorkItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: delayWorkItem)
+    }
+
+    @objc
+    private func handleSoftRepeatTouchUp(_ sender: SoftRepeatKeyButton) {
+        stopSoftRepeat()
+    }
+
+    private func stopSoftRepeat() {
+        softRepeatDelayWorkItem?.cancel()
+        softRepeatDelayWorkItem = nil
+        softRepeatTimer?.invalidate()
+        softRepeatTimer = nil
+        activeSoftRepeatButton = nil
     }
 
     @objc
@@ -1069,6 +1933,21 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         navigationController?.pushViewController(viewController, animated: true)
     }
 
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        !isTouchInsideControlHierarchy(touch.view)
+    }
+
+    private func isTouchInsideControlHierarchy(_ view: UIView?) -> Bool {
+        var current = view
+        while let node = current {
+            if node is UIControl {
+                return true
+            }
+            current = node.superview
+        }
+        return false
+    }
+
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         switch textField {
         case commandField:
@@ -1079,10 +1958,14 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             sendTextToVNC()
         case vncPasswordField:
             connectVNC()
+        case browserURLField:
+            navigateFocusedBrowser()
         case newFolderField:
             createFolderInFiles()
         case renameEntryField:
             renameSelectedFilesEntry()
+        case displayWidthField, displayHeightField, displayScaleField:
+            applyDisplayProfileOverride()
         default:
             textField.resignFirstResponder()
         }
@@ -1117,30 +2000,34 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     }
 
     private var routesHardwareKeyboardToTerminal: Bool {
-        guard let terminalWindow = focusedTerminalWindow(snapshot: latestSnapshot),
-              let terminalState = terminalWindow.terminalState else {
-            return false
-        }
-
-        return terminalState.sessionState == .connected
+        keyboardRouting(for: latestSnapshot).routeToTerminal
     }
 
     private var routesHardwareKeyboardToVNC: Bool {
-        guard let vncWindow = focusedVNCWindow(snapshot: latestSnapshot),
-              let vncState = vncWindow.vncState else {
-            return false
-        }
-
-        return vncState.sessionState == .connected
+        keyboardRouting(for: latestSnapshot).routeToVNC
     }
 
     private var routesPointerToVNC: Bool {
-        guard let vncWindow = focusedVNCWindow(snapshot: latestSnapshot),
-              let vncState = vncWindow.vncState else {
+        guard let snapshot = latestSnapshot else {
             return false
         }
 
-        return vncState.sessionState == .connected
+        switch snapshot.inputCaptureMode {
+        case .automatic:
+            guard let vncWindow = focusedVNCWindow(snapshot: snapshot),
+                  let vncState = vncWindow.vncState else {
+                return false
+            }
+            return vncState.sessionState == .connected
+        case .terminal:
+            return false
+        case .vnc:
+            guard let vncWindow = snapshot.windows.last(where: { $0.kind == .vnc }),
+                  let vncState = vncWindow.vncState else {
+                return false
+            }
+            return vncState.sessionState == .connected
+        }
     }
 
     private func configureField(
@@ -1215,6 +2102,31 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         )
     }
 
+    private func normalizedBrowserAddress(_ address: String) -> String? {
+        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        let candidate = (trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://"))
+            ? trimmed
+            : "https://\(trimmed)"
+        return URL(string: candidate) == nil ? nil : candidate
+    }
+
+    private func isAllowedBrowserAddress(_ address: String) -> Bool {
+        guard let url = URL(string: address),
+              let scheme = url.scheme?.lowercased() else {
+            return false
+        }
+
+        return scheme == "http" || scheme == "https"
+    }
+
+    private func setBrowserAddressValidationState(isValid: Bool) {
+        browserURLField.textColor = isValid ? .label : .systemRed
+    }
+
     private func focusedTerminalWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
         guard let snapshot else {
             return nil
@@ -1228,6 +2140,68 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         return snapshot.windows.last(where: { $0.kind == .terminal })
     }
 
+    private func focusedWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
+        guard let snapshot else {
+            return nil
+        }
+
+        if let focusedWindowID = snapshot.focusedWindowID,
+           let focusedWindow = snapshot.windows.first(where: { $0.id == focusedWindowID }) {
+            return focusedWindow
+        }
+
+        return snapshot.windows.last
+    }
+
+    private func keyboardRouting(for snapshot: PhaseZeroSnapshot?) -> RoutedKeyboardInput {
+        guard let snapshot else {
+            return RoutedKeyboardInput(routeToTerminal: false, routeToVNC: false)
+        }
+
+        let routingWindow: PhaseZeroWindow?
+        switch snapshot.inputCaptureMode {
+        case .automatic:
+            routingWindow = focusedWindow(snapshot: snapshot)
+        case .terminal:
+            routingWindow = focusedTerminalWindow(snapshot: snapshot)
+        case .vnc:
+            routingWindow = focusedVNCWindow(snapshot: snapshot)
+        }
+
+        return InputRouter().routeKeyboardInput(
+            focusedWindow: routingWindow,
+            captureMode: snapshot.inputCaptureMode
+        )
+    }
+
+    private func inputCaptureStatusText(snapshot: PhaseZeroSnapshot) -> String {
+        let routing = keyboardRouting(for: snapshot)
+        let mode = snapshot.inputCaptureMode.rawValue.capitalized
+        let workMode = snapshot.activeWorkMode.rawValue.uppercased()
+
+        let targetWindow: PhaseZeroWindow?
+        switch snapshot.inputCaptureMode {
+        case .automatic:
+            targetWindow = focusedWindow(snapshot: snapshot)
+        case .terminal:
+            targetWindow = focusedTerminalWindow(snapshot: snapshot)
+        case .vnc:
+            targetWindow = focusedVNCWindow(snapshot: snapshot)
+        }
+
+        let target = targetWindow?.title ?? "None"
+        let keyboardDestination: String
+        if routing.routeToVNC {
+            keyboardDestination = "VNC"
+        } else if routing.routeToTerminal {
+            keyboardDestination = "Terminal"
+        } else {
+            keyboardDestination = "Local only"
+        }
+
+        return "Mode: \(workMode) • Input capture: \(mode) • Target: \(target) • Keyboard: \(keyboardDestination)"
+    }
+
     private func focusedFilesWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
         guard let snapshot else {
             return nil
@@ -1239,6 +2213,19 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         }
 
         return snapshot.windows.last(where: { $0.kind == .files })
+    }
+
+    private func focusedBrowserWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
+        guard let snapshot else {
+            return nil
+        }
+
+        if let focusedWindowID = snapshot.focusedWindowID,
+           let focusedWindow = snapshot.windows.first(where: { $0.id == focusedWindowID && $0.kind == .browser }) {
+            return focusedWindow
+        }
+
+        return snapshot.windows.last(where: { $0.kind == .browser })
     }
 
     private func focusedVNCWindow(snapshot: PhaseZeroSnapshot?) -> PhaseZeroWindow? {
@@ -1304,6 +2291,34 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
 
     private func filesPreview(snapshot: PhaseZeroSnapshot) -> String {
         focusedFilesWindow(snapshot: snapshot)?.filesState?.previewText ?? "No files window selected."
+    }
+
+    private func browserStatusText(snapshot: PhaseZeroSnapshot) -> String {
+        guard let browserState = focusedBrowserWindow(snapshot: snapshot)?.browserState else {
+            return "Browser: no browser window selected"
+        }
+
+        let current = browserState.currentURLString ?? browserState.homeURLString
+        return """
+        URL: \(current)
+        Title: \(browserState.pageTitle ?? "untitled")
+        Status: \(browserState.statusMessage)
+        Loading: \(browserState.isLoading ? "yes" : "no")
+        Back/Forward: \(browserState.canGoBack ? "yes" : "no") / \(browserState.canGoForward ? "yes" : "no")
+        """
+    }
+
+    private func browserPreview(snapshot: PhaseZeroSnapshot) -> String {
+        guard let browserState = focusedBrowserWindow(snapshot: snapshot)?.browserState else {
+            return "No browser window selected."
+        }
+
+        let events = browserState.recentEvents.suffix(10)
+        if events.isEmpty {
+            return "No browser events yet."
+        }
+
+        return events.map { "• \($0)" }.joined(separator: "\n")
     }
 
     private func vncStatusText(snapshot: PhaseZeroSnapshot) -> String {
@@ -1393,18 +2408,43 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         }
     }
 
-    private func terminalInput(for key: UIKey) -> String? {
+    private func routedKeyboardInput(for key: UIKey) -> String? {
         if key.modifierFlags.contains(.command) {
             return nil
         }
 
+        let effectiveControl = key.modifierFlags.contains(.control) || softControlModifierLatched
+        let effectiveAlternate = key.modifierFlags.contains(.alternate) || softAlternateModifierLatched
+
+        if effectiveControl,
+           let scalar = key.charactersIgnoringModifiers.lowercased().unicodeScalars.first {
+            let value = scalar.value
+            if value >= 0x61 && value <= 0x7A,
+               let controlCode = UnicodeScalar(value - 0x60) {
+                let payload = String(controlCode)
+                return effectiveAlternate ? "\u{001B}" + payload : payload
+            }
+        }
+
         switch key.keyCode {
+        case .keyboardEscape:
+            return "\u{001B}"
         case .keyboardReturnOrEnter:
             return "\n"
         case .keyboardDeleteOrBackspace:
             return "\u{7F}"
+        case .keyboardDeleteForward:
+            return "\u{001B}[3~"
         case .keyboardTab:
             return "\t"
+        case .keyboardHome:
+            return "\u{001B}[H"
+        case .keyboardEnd:
+            return "\u{001B}[F"
+        case .keyboardPageUp:
+            return "\u{001B}[5~"
+        case .keyboardPageDown:
+            return "\u{001B}[6~"
         case .keyboardUpArrow:
             return "\u{001B}[A"
         case .keyboardDownArrow:
@@ -1413,17 +2453,68 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             return "\u{001B}[C"
         case .keyboardLeftArrow:
             return "\u{001B}[D"
+        case .keyboardF1:
+            return "\u{001B}OP"
+        case .keyboardF2:
+            return "\u{001B}OQ"
+        case .keyboardF3:
+            return "\u{001B}OR"
+        case .keyboardF4:
+            return "\u{001B}OS"
+        case .keyboardF5:
+            return "\u{001B}[15~"
+        case .keyboardF6:
+            return "\u{001B}[17~"
+        case .keyboardF7:
+            return "\u{001B}[18~"
+        case .keyboardF8:
+            return "\u{001B}[19~"
+        case .keyboardF9:
+            return "\u{001B}[20~"
+        case .keyboardF10:
+            return "\u{001B}[21~"
+        case .keyboardF11:
+            return "\u{001B}[23~"
+        case .keyboardF12:
+            return "\u{001B}[24~"
         default:
-            return key.characters.isEmpty ? nil : key.characters
+            let raw = key.characters.isEmpty ? key.charactersIgnoringModifiers : key.characters
+            guard !raw.isEmpty else {
+                return nil
+            }
+
+            if effectiveAlternate {
+                return "\u{001B}" + raw
+            }
+
+            return raw
         }
     }
 
     private func moveCursor(deltaX: Double, deltaY: Double, description: String) {
+        let surfaceSize = CGSize(
+            width: max(trackpadView.bounds.width, 1),
+            height: max(trackpadView.bounds.height, 1)
+        )
+        let translation = CGPoint(
+            x: deltaX * surfaceSize.width,
+            y: deltaY * surfaceSize.height
+        )
+
         Task {
-            await AppEnvironment.phaseZero.moveCursor(deltaX: deltaX, deltaY: deltaY)
+            await AppEnvironment.phaseZero.handlePointerPan(
+                translation: translation,
+                surfaceSize: surfaceSize,
+                source: .keyboard
+            )
             await AppEnvironment.phaseZero.registerControlInput(description)
         }
     }
+}
+
+private final class SoftRepeatKeyButton: UIButton {
+    var payload: String = ""
+    var payloadDescription: String = ""
 }
 
 private final class BrowserPrototypeViewController: UIViewController, UITextFieldDelegate, WKNavigationDelegate {

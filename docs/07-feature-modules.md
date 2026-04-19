@@ -15,7 +15,7 @@ Implementation status (current):
 
 - `Terminal`: implemented with real SSH runtime, VT100/xterm parsing, selection/copy flows
 - `Files`: implemented with in-app workspace plus import/export
-- `Browser`: spike-level scene-local web host
+- `Browser`: managed runtime metadata + scene web host sync with command acknowledgements
 - `VNC`: implemented runtime with real RFB transport and interaction controls
 
 ## Terminal Module
@@ -88,10 +88,12 @@ Implementation status (current):
 - one browser window at a time is acceptable
 - back, forward, reload, URL entry
 - cookies and website data via managed profile policy
+- state sync for URL/title/loading/canGoBack/canGoForward
+- command-based navigation (`navigate`, `reload`, `back`, `forward`) through runtime registry
 
 ### Main Risk
 
-The browser is the riskiest MVP feature because the interactive web view is tied to scene UI objects, while the app architecture requires a shared desktop model across scenes.
+The browser remains high risk because `WKWebView` is scene-bound and must stay synchronized with shared state and the external mirror model.
 
 ## VNC Module
 
