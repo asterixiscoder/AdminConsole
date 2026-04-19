@@ -77,4 +77,12 @@ jobs:
             -derivedDataPath /tmp/AdminConsoleDerivedData \
             build \
             CODE_SIGNING_ALLOWED=NO \
-            CLANG_MODULE_CACHE_PATH="$CLANG_MODULE_CACHE_PATH"
+            CLANG_MODULE_CACHE_PATH="$CLANG_MODULE_CACHE_PATH" \
+            | tee /tmp/adminconsole-ios-build.log
+
+      - name: Fail On AdminConsoleApp Warnings
+        run: |
+          if rg -n "warning:.*\(in target 'AdminConsoleApp' from project 'AdminConsole'\)|/AdminConsoleApp/.*warning:" /tmp/adminconsole-ios-build.log; then
+            echo "::error::Compiler warnings found in AdminConsoleApp target."
+            exit 1
+          fi
