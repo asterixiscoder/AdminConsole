@@ -1,6 +1,7 @@
 import UIKit
 import WebKit
 
+@MainActor
 final class DesktopRootViewController: UIViewController {
     private let canvasView = UIView()
     private let titleLabel = UILabel()
@@ -1396,6 +1397,7 @@ private extension UIColor {
     }
 }
 
+@MainActor
 private final class TerminalViewportTextView: UITextView {
     var windowID: PhaseZeroWindowID = PhaseZeroWindowID()
     var terminalState: PhaseZeroTerminalState?
@@ -1403,12 +1405,14 @@ private final class TerminalViewportTextView: UITextView {
     var selectionPreview: PhaseZeroTerminalSelection?
 }
 
+@MainActor
 private final class WindowChromeView: UIView {
     var windowID: PhaseZeroWindowID = PhaseZeroWindowID()
     var windowFrame: PhaseZeroRect = .defaultWindow
     var isWindowMaximized: Bool = false
 }
 
+@MainActor
 private final class WindowResizeHandleView: UIView {
     var windowID: PhaseZeroWindowID = PhaseZeroWindowID()
     var windowFrame: PhaseZeroRect = .defaultWindow
@@ -1430,10 +1434,11 @@ private enum BrowserNavigationEvent {
     case blocked(urlString: String?, reason: String)
 }
 
+@MainActor
 private final class BrowserNavigationDelegateProxy: NSObject, WKNavigationDelegate {
-    private let onEvent: (BrowserNavigationEvent) -> Void
+    private let onEvent: @MainActor (BrowserNavigationEvent) -> Void
 
-    init(onEvent: @escaping (BrowserNavigationEvent) -> Void) {
+    init(onEvent: @escaping @MainActor (BrowserNavigationEvent) -> Void) {
         self.onEvent = onEvent
     }
 
@@ -1452,7 +1457,7 @@ private final class BrowserNavigationDelegateProxy: NSObject, WKNavigationDelega
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
         guard let url = navigationAction.request.url else {
             decisionHandler(.cancel)

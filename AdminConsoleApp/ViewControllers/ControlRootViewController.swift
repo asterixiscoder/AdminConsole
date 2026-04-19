@@ -3,6 +3,7 @@ import UIKit
 import WebKit
 import InputKit
 
+@MainActor
 final class ControlRootViewController: UIViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIGestureRecognizerDelegate {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
@@ -57,6 +58,8 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     private var softControlModifierLatched = false
     private var softAlternateModifierLatched = false
     private weak var activeSoftRepeatButton: SoftRepeatKeyButton?
+    private var activeSoftRepeatPayload: String?
+    private var activeSoftRepeatDescription: String?
     private var softRepeatDelayWorkItem: DispatchWorkItem?
     private var softRepeatTimer: Timer?
     private var miniDockCollapsedWidthConstraint: NSLayoutConstraint?
@@ -258,9 +261,13 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         applyTrackpadCursor(snapshot: latestSnapshot)
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopSoftRepeat()
+    }
+
     deinit {
         updatesTask?.cancel()
-        stopSoftRepeat()
     }
 
     override var keyCommands: [UIKeyCommand]? {
@@ -1868,6 +1875,8 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         stopSoftRepeat()
 
         activeSoftRepeatButton = sender
+        activeSoftRepeatPayload = sender.payload
+        activeSoftRepeatDescription = sender.payloadDescription
         sendSoftKeyPayload(sender.payload, description: sender.payloadDescription)
 
         let delayWorkItem = DispatchWorkItem { [weak self, weak sender] in
@@ -1876,17 +1885,14 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
             }
 
             self.softRepeatTimer?.invalidate()
-            let timer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self, weak sender] _ in
-                guard let self, let sender, self.activeSoftRepeatButton === sender else {
-                    return
-                }
-                self.sendSoftKeyPayload(
-                    sender.payload,
-                    description: sender.payloadDescription,
-                    registerEvent: false,
-                    applyLatchedModifiers: true
-                )
-            }
+            let timer = Timer.scheduledTimer(
+                timeInterval: 0.08,
+                target: self,
+                selector: #selector(self.handleSoftRepeatTimerTick),
+                userInfo: nil,
+                repeats: true
+            )
+            timer.tolerance = 0.02
             self.softRepeatTimer = timer
         }
 
@@ -1905,6 +1911,24 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
         softRepeatTimer?.invalidate()
         softRepeatTimer = nil
         activeSoftRepeatButton = nil
+        activeSoftRepeatPayload = nil
+        activeSoftRepeatDescription = nil
+    }
+
+    @objc
+    private func handleSoftRepeatTimerTick() {
+        guard activeSoftRepeatButton != nil,
+              let payload = activeSoftRepeatPayload,
+              let description = activeSoftRepeatDescription else {
+            return
+        }
+
+        sendSoftKeyPayload(
+            payload,
+            description: description,
+            registerEvent: false,
+            applyLatchedModifiers: true
+        )
     }
 
     @objc
@@ -2512,11 +2536,13 @@ final class ControlRootViewController: UIViewController, UITextFieldDelegate, UI
     }
 }
 
+@MainActor
 private final class SoftRepeatKeyButton: UIButton {
     var payload: String = ""
     var payloadDescription: String = ""
 }
 
+@MainActor
 private final class BrowserPrototypeViewController: UIViewController, UITextFieldDelegate, WKNavigationDelegate {
     private let addressField = UITextField()
     private let webView = WKWebView(frame: .zero)
