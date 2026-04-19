@@ -16,7 +16,7 @@ final class ControlSceneDelegate: UIResponder, UIWindowSceneDelegate {
             await AppEnvironment.phaseZero.startIfNeeded()
         }
 
-        let rootViewController = UINavigationController(rootViewController: ControlRootViewController())
+        let rootViewController = TermiusRootTabBarController()
         let window = UIWindow(windowScene: windowScene)
         window.rootViewController = rootViewController
         window.makeKeyAndVisible()

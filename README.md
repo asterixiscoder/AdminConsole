@@ -114,6 +114,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 - [Risks and Decisions](docs/08-risks-and-decisions.md)
 - [Roadmap MVP](docs/09-roadmap-mvp.md)
 - [Testing and Validation](docs/10-testing-and-validation.md)
+- [Termius Parity Roadmap](docs/11-termius-parity-roadmap.md)
 
 ## Solution Summary
 

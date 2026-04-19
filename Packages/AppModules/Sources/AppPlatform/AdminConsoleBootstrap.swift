@@ -64,6 +64,7 @@ public typealias PhaseZeroVNCPointerButton = VNCRuntime.PointerButton
 public typealias PhaseZeroVNCScrollDirection = VNCRuntime.ScrollDirection
 public typealias PhaseZeroInputCaptureMode = DesktopInputCaptureMode
 public typealias PhaseZeroWorkMode = DesktopWorkMode
+public typealias PhaseZeroMirrorMode = DesktopMirrorMode
 
 public struct PhaseZeroSSHConnectionRequest: Sendable, Equatable {
     public var host: String
@@ -340,6 +341,26 @@ public actor PhaseZeroCoordinator {
         )
     }
 
+    public func setMirrorMode(_ mode: PhaseZeroMirrorMode) async {
+        _ = await bootstrap.store.dispatch(.setMirrorMode(mode))
+
+        let summary: String
+        switch mode {
+        case .activeWorkMode:
+            summary = "Mirror mode: Active work mode"
+        case .focusedWindow:
+            summary = "Mirror mode: Focused window"
+        case .terminal:
+            summary = "Mirror mode: Terminal"
+        case .vnc:
+            summary = "Mirror mode: VNC"
+        case .browser:
+            summary = "Mirror mode: Browser"
+        }
+
+        await registerControlInput(summary)
+    }
+
     public func noteInput(_ description: String) async {
         _ = await bootstrap.store.dispatch(.noteInput(description))
     }
@@ -446,6 +467,17 @@ public actor PhaseZeroCoordinator {
             await registerControlInput("SSH connect failed: \(error.localizedDescription)")
             return false
         }
+    }
+
+    public func disconnectFocusedTerminal() async {
+        guard let windowID = await targetTerminalWindowID(),
+              let runtime = await terminalRuntime(for: windowID) else {
+            await registerControlInput("SSH disconnect skipped: no focused terminal window")
+            return
+        }
+
+        await runtime.disconnect()
+        await registerControlInput("SSH disconnected")
     }
 
     public func sendInputToFocusedTerminal(_ text: String) async {
@@ -705,10 +737,11 @@ public actor PhaseZeroCoordinator {
         await runtime.acknowledgeNavigationCommand(id: commandID)
     }
 
-    public func connectFocusedVNC(using request: PhaseZeroVNCConnectionRequest) async {
+    @discardableResult
+    public func connectFocusedVNC(using request: PhaseZeroVNCConnectionRequest) async -> Bool {
         guard !request.host.isEmpty else {
             await registerControlInput("VNC connect skipped: host missing")
-            return
+            return false
         }
 
         let windowID: WindowID
@@ -719,18 +752,18 @@ public actor PhaseZeroCoordinator {
             windowID = opened
         } else {
             await registerControlInput("VNC connect failed: unable to create VNC window")
-            return
+            return false
         }
 
         guard let runtime = await vncRuntime(for: windowID) else {
             await registerControlInput("VNC connect failed: runtime unavailable")
-            return
+            return false
         }
 
         _ = await bootstrap.store.dispatch(.setActiveWorkMode(.vnc))
         await focusWindow(windowID)
         await registerControlInput("VNC connect: \(request.connectionSummary)")
-        _ = await runtime.connect(using: request.runtimeConfiguration())
+        return await runtime.connect(using: request.runtimeConfiguration())
     }
 
     public func reconnectFocusedVNC() async {

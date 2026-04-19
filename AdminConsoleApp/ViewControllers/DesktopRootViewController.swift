@@ -24,7 +24,6 @@ final class DesktopRootViewController: UIViewController {
 
         view.backgroundColor = UIColor(red: 0.07, green: 0.10, blue: 0.14, alpha: 1.0)
         setupCanvas()
-        setupHeader()
         setupCursor()
         setupTapToFocus()
         startUpdates()
@@ -154,15 +153,6 @@ final class DesktopRootViewController: UIViewController {
 
     private func render(snapshot: PhaseZeroSnapshot) {
         lastRenderedCanvasSize = canvasView.bounds.size
-        statusLabel.text = """
-        Revision \(snapshot.revision)
-        Active mode: \(snapshot.activeWorkMode.rawValue.uppercased())
-        \(snapshot.windows.count) windows available
-        \(snapshot.isExternalDisplayConnected ? "Display active" : "Display inactive")
-        Input capture: \(snapshot.inputCaptureMode.rawValue.capitalized)
-        \(Int(snapshot.displayProfile.width)) x \(Int(snapshot.displayProfile.height)) @ \(String(format: "%.1f", snapshot.displayProfile.scale))x
-        """
-        captureBadgeLabel.text = captureBadgeText(for: snapshot)
 
         for view in windowViews.values {
             view.removeFromSuperview()
@@ -180,12 +170,7 @@ final class DesktopRootViewController: UIViewController {
 
         if let activeWindow = mirroredActiveWindow(in: snapshot) {
             let panel = makeWindowView(window: activeWindow, snapshot: snapshot)
-            panel.frame = CGRect(
-                x: 14,
-                y: 72,
-                width: max(canvasView.bounds.width - 28, 120),
-                height: max(canvasView.bounds.height - 86, 120)
-            )
+            panel.frame = canvasView.bounds
             panel.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             canvasView.addSubview(panel)
             windowViews[activeWindow.id.rawValue] = panel
@@ -209,7 +194,6 @@ final class DesktopRootViewController: UIViewController {
             height: cursorSize
         )
         canvasView.bringSubviewToFront(cursorView)
-        canvasView.bringSubviewToFront(captureBadgeView)
     }
 
     private func captureBadgeText(for snapshot: PhaseZeroSnapshot) -> String {
@@ -225,8 +209,23 @@ final class DesktopRootViewController: UIViewController {
     }
 
     private func mirroredActiveWindow(in snapshot: PhaseZeroSnapshot) -> PhaseZeroWindow? {
-        snapshot.windows.last(where: { $0.kind == snapshot.activeWorkMode.windowKind })
-            ?? snapshot.windows.last
+        switch snapshot.mirrorMode {
+        case .activeWorkMode:
+            return snapshot.windows.last(where: { $0.kind == snapshot.activeWorkMode.windowKind })
+                ?? snapshot.windows.last
+        case .focusedWindow:
+            if let focusedID = snapshot.focusedWindowID,
+               let focusedWindow = snapshot.windows.first(where: { $0.id == focusedID }) {
+                return focusedWindow
+            }
+            return snapshot.windows.last
+        case .terminal:
+            return snapshot.windows.last(where: { $0.kind == .terminal }) ?? snapshot.windows.last
+        case .vnc:
+            return snapshot.windows.last(where: { $0.kind == .vnc }) ?? snapshot.windows.last
+        case .browser:
+            return snapshot.windows.last(where: { $0.kind == .browser }) ?? snapshot.windows.last
+        }
     }
 
     private func makeEmptyMirrorPlaceholder() -> UIView {

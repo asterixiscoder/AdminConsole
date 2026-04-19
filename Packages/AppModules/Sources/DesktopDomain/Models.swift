@@ -851,11 +851,20 @@ public enum DesktopWorkMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
+public enum DesktopMirrorMode: String, Codable, CaseIterable, Sendable {
+    case activeWorkMode
+    case focusedWindow
+    case terminal
+    case vnc
+    case browser
+}
+
 public struct DesktopSnapshot: Codable, Equatable, Sendable {
     public var workspaceID: WorkspaceID
     public var windows: [DesktopWindow]
     public var focusedWindowID: WindowID?
     public var activeWorkMode: DesktopWorkMode
+    public var mirrorMode: DesktopMirrorMode
     public var inputCaptureMode: DesktopInputCaptureMode
     public var displayProfile: DisplayProfile
     public var cursor: CursorState
@@ -868,6 +877,7 @@ public struct DesktopSnapshot: Codable, Equatable, Sendable {
         windows: [DesktopWindow] = [],
         focusedWindowID: WindowID? = nil,
         activeWorkMode: DesktopWorkMode = .ssh,
+        mirrorMode: DesktopMirrorMode = .activeWorkMode,
         inputCaptureMode: DesktopInputCaptureMode = .automatic,
         displayProfile: DisplayProfile = DisplayProfile(),
         cursor: CursorState = CursorState(),
@@ -879,6 +889,7 @@ public struct DesktopSnapshot: Codable, Equatable, Sendable {
         self.windows = windows
         self.focusedWindowID = focusedWindowID
         self.activeWorkMode = activeWorkMode
+        self.mirrorMode = mirrorMode
         self.inputCaptureMode = inputCaptureMode
         self.displayProfile = displayProfile
         self.cursor = cursor

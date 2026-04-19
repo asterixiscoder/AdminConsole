@@ -17,6 +17,7 @@ public enum DesktopAction: Equatable, Sendable {
     case setExternalDisplayConnected(Bool)
     case setInputCaptureMode(DesktopInputCaptureMode)
     case setActiveWorkMode(DesktopWorkMode)
+    case setMirrorMode(DesktopMirrorMode)
     case moveCursor(deltaX: Double, deltaY: Double)
     case noteInput(String)
 }
@@ -189,6 +190,8 @@ public actor DesktopStore {
                     return updated
                 }
             }
+        case let .setMirrorMode(mode):
+            next.mirrorMode = mode
         case let .moveCursor(deltaX, deltaY):
             next.cursor = WindowManager.fit(
                 CursorState(
