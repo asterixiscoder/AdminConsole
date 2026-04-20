@@ -208,7 +208,7 @@ final class RebootAppModel {
                 username: host.username,
                 password: resolvedPassword,
                 terminalType: "xterm-256color",
-                terminalSize: TerminalSize(columns: 72, rows: 30, pixelWidth: 1080, pixelHeight: 1200)
+                terminalSize: TerminalSize(columns: 40, rows: 30, pixelWidth: 640, pixelHeight: 1200)
             )
 
             let didConnect = await runtime.connect(using: config)
@@ -290,7 +290,7 @@ final class RebootAppModel {
     }
 
     func resizeTerminal(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) {
-        let normalizedColumns = max(48, min(72, columns))
+        let normalizedColumns = max(32, min(40, columns))
         let normalizedRows = max(18, rows)
         Task {
             await runtime.resize(
@@ -1825,13 +1825,29 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
 }
 
 @MainActor
-final class RebootTerminalViewController: UIViewController, UITextFieldDelegate {
+final class RebootTerminalInputField: UITextField {
+    var onInsertText: ((String) -> Void)?
+    var onDeleteBackward: (() -> Void)?
+
+    override var hasText: Bool { false }
+
+    override func insertText(_ text: String) {
+        onInsertText?(text)
+    }
+
+    override func deleteBackward() {
+        onDeleteBackward?()
+    }
+}
+
+@MainActor
+final class RebootTerminalViewController: UIViewController {
     private let model: RebootAppModel
     private let titleLabel = UILabel()
     private let outputView = UITextView()
     private let shortcutsScrollView = UIScrollView()
     private let shortcutsRow = UIStackView()
-    private let keyboardInputField = UITextField()
+    private let keyboardInputField = RebootTerminalInputField()
     private var terminalObserverID: UUID?
     private var lastAppliedTerminalSize: TerminalSize?
 
@@ -1916,7 +1932,6 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         bottomStack.spacing = 10
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
 
-        keyboardInputField.delegate = self
         keyboardInputField.autocorrectionType = .no
         keyboardInputField.autocapitalizationType = .none
         keyboardInputField.spellCheckingType = .no
@@ -1932,6 +1947,12 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         keyboardInputField.textColor = .clear
         keyboardInputField.backgroundColor = .clear
         keyboardInputField.translatesAutoresizingMaskIntoConstraints = false
+        keyboardInputField.onInsertText = { [weak self] text in
+            self?.model.send(text)
+        }
+        keyboardInputField.onDeleteBackward = { [weak self] in
+            self?.model.send("\u{7F}")
+        }
 
         let focusTap = UITapGestureRecognizer(target: self, action: #selector(focusKeyboard))
         focusTap.cancelsTouchesInView = false
@@ -2023,7 +2044,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         let rows = Int(floor(usableHeight / rowHeight))
         let screenScale = view.window?.screen.scale ?? UIScreen.main.scale
         let terminalSize = TerminalSize(
-            columns: max(48, min(72, columns)),
+            columns: max(32, min(40, columns)),
             rows: max(18, rows),
             pixelWidth: Int(outputView.bounds.width * screenScale),
             pixelHeight: Int(outputView.bounds.height * screenScale)
@@ -2039,46 +2060,6 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
             pixelWidth: terminalSize.pixelWidth,
             pixelHeight: terminalSize.pixelHeight
         )
-    }
-
-    func textField(
-        _ textField: UITextField,
-        shouldChangeCharactersIn range: NSRange,
-        replacementString string: String
-    ) -> Bool {
-        let currentText = textField.text ?? ""
-        guard let textRange = Range(range, in: currentText) else {
-            return false
-        }
-        let updatedText = currentText.replacingCharacters(in: textRange, with: string)
-
-        // Apply terminal delta: delete replaced range, then insert replacement.
-        if range.length > 0 {
-            for _ in 0..<range.length {
-                model.send("\u{7F}")
-            }
-        }
-        if !string.isEmpty {
-            model.send(string)
-        }
-
-        // Keep UITextField composition state in sync with keyboard to avoid duplicated first char.
-        textField.text = updatedText
-        let end = textField.endOfDocument
-        textField.selectedTextRange = textField.textRange(from: end, to: end)
-
-        // Prevent unbounded hidden-buffer growth.
-        if updatedText.count > 256 {
-            textField.text = ""
-        }
-
-        return false
-    }
-
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        model.send("\n")
-        textField.text = ""
-        return false
     }
 
     private func makeSoftKeyButton(_ title: String) -> UIButton {
