@@ -100,7 +100,7 @@ public actor SSHTerminalRuntime {
         await publishState()
 
         do {
-            await logConnectionEvent("Starting new SSH connection.")
+            await logConnectionEvent("Connecting...")
             let liveTransport = try await establishTransport(using: configuration)
             transport = liveTransport
             state.connectionTitle = configuration.connectionSummary
@@ -108,8 +108,7 @@ public actor SSHTerminalRuntime {
             state.statusMessage = "Connected"
             state.columns = configuration.terminalSize.columns
             state.rows = configuration.terminalSize.rows
-            await logConnectionEvent("SSH handshake completed. Shell channel is active.")
-            appendTerminalOutput(terminalLine("SSH session established."))
+            await logConnectionEvent("Shell ready.")
             await publishState()
             return true
         } catch {
@@ -225,7 +224,7 @@ public actor SSHTerminalRuntime {
 
         state.sessionState = .failed
         state.statusMessage = "Connection dropped while app was in background."
-        appendTerminalOutput("[SSH] Session dropped during background. Reconnect is required.\n")
+        appendTerminalOutput(terminalLine("[SSH] Reconnect required."))
         await publishState()
         await tearDownTransport()
     }
@@ -280,7 +279,7 @@ public actor SSHTerminalRuntime {
 
                 sshHandler.createChannel(shellPromise) { childChannel, _ in
                     Task {
-                        await self.logConnectionEvent("SSH session channel opened. Requesting interactive shell.")
+                        await self.logConnectionEvent("Requesting shell...")
                     }
                     let shellHandler = SSHInteractiveShellHandler(
                         onOutput: { output in
@@ -320,7 +319,7 @@ public actor SSHTerminalRuntime {
                                 promise: shellPromise
                             )
                             Task {
-                                await self.logConnectionEvent("PTY and shell requests sent.")
+                                await self.logConnectionEvent("PTY sent.")
                             }
                         }
                 }
@@ -330,7 +329,7 @@ public actor SSHTerminalRuntime {
 
         do {
             state.statusMessage = "Opening TCP connection..."
-            await logConnectionEvent("Resolving host \(configuration.connection.host):\(configuration.connection.port).")
+            await logConnectionEvent("Resolving \(configuration.connection.host):\(configuration.connection.port)...")
             await publishState()
             let connectFuture: EventLoopFuture<Channel> = bootstrap.connect(
                 host: configuration.connection.host,
@@ -341,21 +340,21 @@ public actor SSHTerminalRuntime {
                 timeoutSeconds: 20,
                 stage: "TCP connection"
             )
-            await logConnectionEvent("TCP connection established.")
+            await logConnectionEvent("TCP connected.")
 
             guard let shellFuture = shellFutureBox.future else {
                 throw SSHRuntimeError.shellChannelUnavailable
             }
 
             state.statusMessage = "Negotiating SSH session..."
-            await logConnectionEvent("Negotiating SSH algorithms and authenticating user \(configuration.username).")
+            await logConnectionEvent("Authenticating...")
             await publishState()
             let shellChannel = try await timedFutureValue(
                 shellFuture,
                 timeoutSeconds: 20,
                 stage: "SSH session negotiation"
             )
-            await logConnectionEvent("Interactive shell request accepted by server.")
+            await logConnectionEvent("Shell accepted.")
             return Transport(
                 eventLoopGroup: group,
                 rootChannel: rootChannel,
@@ -563,14 +562,13 @@ private final class SSHPasswordAuthenticationDelegate: NIOSSHClientUserAuthentic
         availableMethods: NIOSSHAvailableUserAuthenticationMethods,
         nextChallengePromise: EventLoopPromise<NIOSSHUserAuthenticationOffer?>
     ) {
-        onEvent("Server auth methods: \(availableMethods)")
         guard availableMethods.contains(.password) else {
-            onEvent("Password authentication is not accepted by server.")
+            onEvent("Password auth unavailable.")
             nextChallengePromise.fail(SSHRuntimeError.passwordAuthenticationNotSupported)
             return
         }
 
-        onEvent("Sending password authentication request.")
+        onEvent("Sending password...")
 
         nextChallengePromise.succeed(
             NIOSSHUserAuthenticationOffer(
