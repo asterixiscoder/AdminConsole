@@ -1892,6 +1892,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
             ("|", "|"),
             ("~", "~"),
             ("-", "-"),
+            ("copy", ""),
             ("^C", "\u{3}"),
             ("^\\", "\u{1C}")
         ]
@@ -1899,7 +1900,9 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
             let button = makeSoftKeyButton(item.0)
             button.addAction(UIAction { [weak self] _ in
                 guard let self else { return }
-                if !item.1.isEmpty {
+                if item.0 == "copy" {
+                    self.copyTerminalText()
+                } else if !item.1.isEmpty {
                     self.model.send(item.1)
                 }
             }, for: .touchUpInside)
@@ -2103,6 +2106,21 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         button.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
         button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
         return button
+    }
+
+    private func copyTerminalText() {
+        let text = outputView.text ?? ""
+        let payload: String
+        if outputView.selectedRange.length > 0,
+           let range = Range(outputView.selectedRange, in: text) {
+            payload = String(text[range])
+        } else {
+            payload = text
+        }
+        guard !payload.isEmpty else {
+            return
+        }
+        UIPasteboard.general.string = payload
     }
 
     private func configureHeader() {
