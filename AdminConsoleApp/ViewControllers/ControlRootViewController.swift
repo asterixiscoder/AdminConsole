@@ -529,8 +529,7 @@ final class RebootRootViewController: UIViewController, RebootPhoneRouting {
         }
     }
 
-    private let model = RebootAppModel()
-    var appModel: RebootAppModel { model }
+    private let model = AppEnvironment.rebootModel
     private let contentContainer = UIView()
     private let tabBarContainer = UIView()
     private let tabStack = UIStackView()

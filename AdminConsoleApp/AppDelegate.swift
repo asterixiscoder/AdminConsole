@@ -41,8 +41,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 }
 
+@MainActor
 enum AppEnvironment {
     static let phaseZero = PhaseZeroCoordinator()
+    static let rebootModel = RebootAppModel()
     static let hostCatalog = HostCatalogStore(
         persistence: UserDefaultsHostCatalogPersistence()
     )
