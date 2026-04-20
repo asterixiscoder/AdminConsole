@@ -330,7 +330,7 @@ final class RebootAppModel {
     }
 
     func resizeTerminal(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) {
-        let normalizedColumns = max(32, min(40, columns))
+        let normalizedColumns = max(40, min(220, columns))
         let normalizedRows = max(18, rows)
         Task {
             await runtime.resize(
@@ -1897,11 +1897,11 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         configureHeader()
 
         outputView.isEditable = false
-        outputView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        outputView.backgroundColor = UIColor(red: 0.08, green: 0.09, blue: 0.16, alpha: 1)
-        outputView.textColor = UIColor(red: 0.42, green: 0.86, blue: 0.97, alpha: 1)
-        outputView.layer.cornerRadius = 12
-        outputView.textContainerInset = UIEdgeInsets(top: 14, left: 10, bottom: 14, right: 10)
+        outputView.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
+        outputView.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.12, alpha: 1)
+        outputView.textColor = UIColor(red: 0.90, green: 0.92, blue: 0.96, alpha: 1)
+        outputView.layer.cornerRadius = 6
+        outputView.textContainerInset = UIEdgeInsets(top: 6, left: 2, bottom: 6, right: 2)
         outputView.textContainer.lineFragmentPadding = 0
         outputView.textContainer.lineBreakMode = .byWordWrapping
         outputView.translatesAutoresizingMaskIntoConstraints = false
@@ -1987,9 +1987,9 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         view.addSubview(bottomStack)
         view.addSubview(keyboardInputField)
         NSLayoutConstraint.activate([
-            outputView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            outputView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            outputView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            outputView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 4),
+            outputView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -4),
+            outputView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
             outputView.bottomAnchor.constraint(equalTo: bottomStack.topAnchor, constant: -16),
 
             bottomStack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
@@ -2041,7 +2041,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         let shouldScrollToBottom = isFollowingTail && !isInteractingWithTerminalScroll
         let currentOffset = outputView.contentOffset
         let transcript = state.transcript
-        let cursorSuffix = state.sessionState == .connected ? "\n█" : ""
+        let cursorSuffix = state.sessionState == .connected ? "█" : ""
         let renderedText = transcript.isEmpty
             ? state.statusMessage
             : transcript + cursorSuffix
@@ -2238,7 +2238,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         let rows = Int(floor(usableHeight / rowHeight))
         let screenScale = view.window?.screen.scale ?? UIScreen.main.scale
         let terminalSize = TerminalSize(
-            columns: max(32, min(40, columns)),
+            columns: max(40, min(160, columns)),
             rows: max(18, rows),
             pixelWidth: Int(outputView.bounds.width * screenScale),
             pixelHeight: Int(outputView.bounds.height * screenScale)
