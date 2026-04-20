@@ -1835,6 +1835,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
     private var terminalObserverID: UUID?
     private var lastAppliedTerminalSize: TerminalSize?
     private var isFollowingTail = true
+    private var isInteractingWithTerminalScroll = false
 
     init(model: RebootAppModel) {
         self.model = model
@@ -1998,7 +1999,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
 
     private func render(state: TerminalSurfaceState) {
         titleLabel.text = state.connectionTitle.isEmpty ? "Terminal" : state.connectionTitle
-        let shouldScrollToBottom = isFollowingTail || isNearBottom(outputView)
+        let shouldScrollToBottom = isFollowingTail && !isInteractingWithTerminalScroll
         let viewport = state.buffer.viewportText(insertingCursor: state.sessionState == .connected)
         outputView.text = viewport.isEmpty ? state.statusMessage : viewport
         if shouldScrollToBottom {
@@ -2015,16 +2016,28 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         guard scrollView === outputView else { return }
+        isInteractingWithTerminalScroll = true
         isFollowingTail = false
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === outputView else { return }
+        if !isInteractingWithTerminalScroll {
+            isFollowingTail = isNearBottom(scrollView)
+        } else if !isNearBottom(scrollView) {
+            isFollowingTail = false
+        }
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         guard scrollView === outputView, !decelerate else { return }
+        isInteractingWithTerminalScroll = false
         isFollowingTail = isNearBottom(scrollView)
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         guard scrollView === outputView else { return }
+        isInteractingWithTerminalScroll = false
         isFollowingTail = isNearBottom(scrollView)
     }
 
@@ -2032,8 +2045,10 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
     private func handleTerminalPan(_ gesture: UIPanGestureRecognizer) {
         switch gesture.state {
         case .began, .changed:
+            isInteractingWithTerminalScroll = true
             isFollowingTail = false
         case .ended, .cancelled, .failed:
+            isInteractingWithTerminalScroll = false
             isFollowingTail = isNearBottom(outputView)
         default:
             break
