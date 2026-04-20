@@ -1825,30 +1825,13 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
 }
 
 @MainActor
-final class RebootTerminalInputField: UITextField {
-    var onInsertText: ((String) -> Void)?
-    var onDeleteBackward: (() -> Void)?
-
-    // Keep delete/backspace available even though we don't store visible text.
-    override var hasText: Bool { true }
-
-    override func insertText(_ text: String) {
-        onInsertText?(text)
-    }
-
-    override func deleteBackward() {
-        onDeleteBackward?()
-    }
-}
-
-@MainActor
-final class RebootTerminalViewController: UIViewController {
+final class RebootTerminalViewController: UIViewController, UITextFieldDelegate {
     private let model: RebootAppModel
     private let titleLabel = UILabel()
     private let outputView = UITextView()
     private let shortcutsScrollView = UIScrollView()
     private let shortcutsRow = UIStackView()
-    private let keyboardInputField = RebootTerminalInputField()
+    private let keyboardInputField = UITextField()
     private var terminalObserverID: UUID?
     private var lastAppliedTerminalSize: TerminalSize?
 
@@ -1946,14 +1929,11 @@ final class RebootTerminalViewController: UIViewController {
         keyboardInputField.enablesReturnKeyAutomatically = false
         keyboardInputField.tintColor = .clear
         keyboardInputField.textColor = .clear
+        keyboardInputField.tintColor = .clear
+        keyboardInputField.textColor = .clear
         keyboardInputField.backgroundColor = .clear
         keyboardInputField.translatesAutoresizingMaskIntoConstraints = false
-        keyboardInputField.onInsertText = { [weak self] text in
-            self?.model.send(text)
-        }
-        keyboardInputField.onDeleteBackward = { [weak self] in
-            self?.model.send("\u{7F}")
-        }
+        keyboardInputField.delegate = self
 
         let focusTap = UITapGestureRecognizer(target: self, action: #selector(focusKeyboard))
         focusTap.cancelsTouchesInView = false
@@ -2023,6 +2003,46 @@ final class RebootTerminalViewController: UIViewController {
     @objc
     private func focusKeyboard() {
         keyboardInputField.becomeFirstResponder()
+    }
+
+    func textField(
+        _ textField: UITextField,
+        shouldChangeCharactersIn range: NSRange,
+        replacementString string: String
+    ) -> Bool {
+        let currentText = textField.text ?? ""
+        guard let textRange = Range(range, in: currentText) else {
+            return false
+        }
+        let updatedText = currentText.replacingCharacters(in: textRange, with: string)
+
+        // Apply terminal delta: delete replaced range, then insert replacement.
+        if range.length > 0 {
+            for _ in 0..<range.length {
+                model.send("\u{7F}")
+            }
+        }
+        if !string.isEmpty {
+            model.send(string)
+        }
+
+        // Keep hidden field composition state in sync with keyboard internals.
+        textField.text = updatedText
+        let end = textField.endOfDocument
+        textField.selectedTextRange = textField.textRange(from: end, to: end)
+
+        // Prevent hidden text accumulation.
+        if updatedText.count > 256 {
+            textField.text = ""
+        }
+
+        return false
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        model.send("\n")
+        textField.text = ""
+        return false
     }
 
     private func applyTerminalGeometryIfNeeded() {
