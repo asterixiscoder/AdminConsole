@@ -199,7 +199,6 @@ public actor SSHTerminalRuntime {
 
         backgroundSuspendedAt = Date()
         state.statusMessage = "App in background. Session will resume on foreground."
-        appendTerminalOutput("[SSH] App entered background. Monitoring session state.\n")
         await publishState()
     }
 
@@ -220,7 +219,6 @@ public actor SSHTerminalRuntime {
 
         if hasActiveTransport {
             state.statusMessage = "Connected"
-            appendTerminalOutput("[SSH] App entered foreground. Session remains active.\n")
             await publishState()
             return
         }

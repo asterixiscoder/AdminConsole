@@ -1829,7 +1829,6 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     private let model: RebootAppModel
     private let titleLabel = UILabel()
     private let outputView = UITextView()
-    private let tabsRow = UIStackView()
     private let shortcutsScrollView = UIScrollView()
     private let shortcutsRow = UIStackView()
     private let keyboardInputField = UITextField()
@@ -1860,19 +1859,6 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         outputView.translatesAutoresizingMaskIntoConstraints = false
         outputView.isSelectable = true
 
-        tabsRow.axis = .horizontal
-        tabsRow.spacing = 8
-        tabsRow.distribution = .fillProportionally
-        let prev = makeChipButton("‹")
-        prev.configuration?.baseBackgroundColor = UIColor(red: 0.18, green: 0.20, blue: 0.30, alpha: 1)
-        let activeTab = makeChipButton("active")
-        activeTab.configuration?.baseBackgroundColor = UIColor(red: 0.21, green: 0.24, blue: 0.35, alpha: 1)
-        let addTab = makeChipButton("+")
-        addTab.configuration?.baseBackgroundColor = UIColor(red: 0.18, green: 0.20, blue: 0.30, alpha: 1)
-        tabsRow.addArrangedSubview(prev)
-        tabsRow.addArrangedSubview(activeTab)
-        tabsRow.addArrangedSubview(addTab)
-
         shortcutsScrollView.showsHorizontalScrollIndicator = false
         shortcutsScrollView.alwaysBounceHorizontal = true
         shortcutsScrollView.alwaysBounceVertical = false
@@ -1893,6 +1879,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
             ("~", "~"),
             ("-", "-"),
             ("copy", ""),
+            ("paste", ""),
             ("^C", "\u{3}"),
             ("^\\", "\u{1C}")
         ]
@@ -1902,6 +1889,8 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
                 guard let self else { return }
                 if item.0 == "copy" {
                     self.copyTerminalText()
+                } else if item.0 == "paste" {
+                    self.pasteTerminalText()
                 } else if !item.1.isEmpty {
                     self.model.send(item.1)
                 }
@@ -1920,7 +1909,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
             shortcutsRow.heightAnchor.constraint(equalTo: shortcutsScrollView.frameLayoutGuide.heightAnchor, constant: -12)
         ])
 
-        let bottomStack = UIStackView(arrangedSubviews: [tabsRow, shortcutsScrollView])
+        let bottomStack = UIStackView(arrangedSubviews: [shortcutsScrollView])
         bottomStack.axis = .vertical
         bottomStack.spacing = 10
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
@@ -1959,7 +1948,6 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
             bottomStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
             bottomStack.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -12),
 
-            tabsRow.heightAnchor.constraint(equalToConstant: 36),
             shortcutsScrollView.heightAnchor.constraint(equalToConstant: 44),
 
             keyboardInputField.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -2087,15 +2075,6 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         return false
     }
 
-    private func makeChipButton(_ title: String) -> UIButton {
-        let button = UIButton(type: .system)
-        button.configuration = .filled()
-        button.configuration?.title = title
-        button.configuration?.baseForegroundColor = .white
-        button.configuration?.cornerStyle = .medium
-        return button
-    }
-
     private func makeSoftKeyButton(_ title: String) -> UIButton {
         let button = UIButton(type: .system)
         button.configuration = .filled()
@@ -2123,6 +2102,13 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         UIPasteboard.general.string = payload
     }
 
+    private func pasteTerminalText() {
+        guard let text = UIPasteboard.general.string, !text.isEmpty else {
+            return
+        }
+        model.send(text)
+    }
+
     private func configureHeader() {
         let closeButton = UIButton(type: .system)
         closeButton.configuration = .plain()
@@ -2132,7 +2118,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         closeButton.translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.text = "Terminal"
-        titleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 18, weight: .medium)
         titleLabel.textColor = .white
         titleLabel.numberOfLines = 1
         titleLabel.adjustsFontSizeToFitWidth = true
