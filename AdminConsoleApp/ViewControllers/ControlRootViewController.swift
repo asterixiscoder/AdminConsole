@@ -1,5 +1,6 @@
 import ConnectionKit
 import DesktopDomain
+import SecurityKit
 import SSHKit
 import UIKit
 
@@ -150,6 +151,7 @@ final class RebootHostStore {
 final class RebootAppModel {
     let hostStore = RebootHostStore()
     var selectedHostID: UUID?
+    private let credentialStore = SSHCredentialStore()
 
     private(set) var terminalState: TerminalSurfaceState = .idle()
     private lazy var runtime: SSHTerminalRuntime = {
@@ -163,23 +165,67 @@ final class RebootAppModel {
 
     func connect(host: RebootHost, password: String) {
         selectedHostID = host.id
-        let config = SSHConnectionConfiguration(
-            connection: ConnectionDescriptor(
-                kind: .ssh,
+        Task {
+            let typedPassword = password.trimmingCharacters(in: .whitespacesAndNewlines)
+            let identity = SSHCredentialIdentity(
                 host: host.hostname,
                 port: host.port,
-                displayName: host.name
-            ),
-            username: host.username,
-            password: password,
-            terminalType: "xterm-256color",
-            terminalSize: TerminalSize(columns: 120, rows: 34, pixelWidth: 1440, pixelHeight: 900)
-        )
+                username: host.username
+            )
 
-        Task {
-            _ = await runtime.connect(using: config)
+            let resolvedPassword: String
+            if typedPassword.isEmpty {
+                do {
+                    if let stored = try await credentialStore.password(for: identity),
+                       !stored.isEmpty {
+                        resolvedPassword = stored
+                    } else {
+                        await runtime.presentLocalFailure(
+                            connectionTitle: "\(host.username)@\(host.hostname):\(host.port)",
+                            message: "No saved password found. Enter password to connect."
+                        )
+                        return
+                    }
+                } catch {
+                    await runtime.presentLocalFailure(
+                        connectionTitle: "\(host.username)@\(host.hostname):\(host.port)",
+                        message: "Unable to read saved password: \(error.localizedDescription)"
+                    )
+                    return
+                }
+            } else {
+                resolvedPassword = typedPassword
+            }
+
+            let config = SSHConnectionConfiguration(
+                connection: ConnectionDescriptor(
+                    kind: .ssh,
+                    host: host.hostname,
+                    port: host.port,
+                    displayName: host.name
+                ),
+                username: host.username,
+                password: resolvedPassword,
+                terminalType: "xterm-256color",
+                terminalSize: TerminalSize(columns: 120, rows: 34, pixelWidth: 1440, pixelHeight: 900)
+            )
+
+            let didConnect = await runtime.connect(using: config)
             await MainActor.run {
-                self.hostStore.markConnected(id: host.id)
+                if didConnect {
+                    self.hostStore.markConnected(id: host.id)
+                }
+            }
+
+            guard didConnect, !typedPassword.isEmpty else {
+                return
+            }
+
+            do {
+                try await credentialStore.savePassword(typedPassword, for: identity)
+            } catch {
+                // Connection is already active; keep session state and skip failing UI.
+                NSLog("AdminConsole: failed to save SSH password for %@: %@", identity.account, error.localizedDescription)
             }
         }
     }
