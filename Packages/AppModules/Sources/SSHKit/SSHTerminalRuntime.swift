@@ -8,6 +8,8 @@ import SecurityKit
 public enum SSHRuntimeError: LocalizedError, Sendable {
     case shellChannelUnavailable
     case noActiveShell
+    case connectionStageTimedOut(String)
+    case passwordAuthenticationNotSupported
 
     public var errorDescription: String? {
         switch self {
@@ -15,6 +17,10 @@ public enum SSHRuntimeError: LocalizedError, Sendable {
             return "SSH shell channel was not created."
         case .noActiveShell:
             return "There is no active SSH shell."
+        case .connectionStageTimedOut(let stage):
+            return "SSH connection timed out during \(stage)."
+        case .passwordAuthenticationNotSupported:
+            return "The SSH server does not allow password authentication for this account."
         }
     }
 }
@@ -93,6 +99,7 @@ public actor SSHTerminalRuntime {
         await publishState()
 
         do {
+            await logConnectionEvent("Starting new SSH connection.")
             let liveTransport = try await establishTransport(using: configuration)
             transport = liveTransport
             state.connectionTitle = configuration.connectionSummary
@@ -100,6 +107,7 @@ public actor SSHTerminalRuntime {
             state.statusMessage = "Connected"
             state.columns = configuration.terminalSize.columns
             state.rows = configuration.terminalSize.rows
+            await logConnectionEvent("SSH handshake completed. Shell channel is active.")
             appendTerminalOutput("SSH session established.\n")
             await publishState()
             return true
@@ -107,8 +115,10 @@ public actor SSHTerminalRuntime {
             await tearDownTransport()
             state.connectionTitle = configuration.connectionSummary
             state.sessionState = .failed
-            state.statusMessage = error.localizedDescription
-            appendTerminalOutput("Connection failed: \(error.localizedDescription)\n")
+            let userMessage = userFacingConnectionMessage(for: error)
+            state.statusMessage = userMessage
+            appendTerminalOutput("Connection failed: \(userMessage)\n")
+            appendTerminalOutput("[debug] \(debugConnectionErrorDescription(error))\n")
             await publishState()
             return false
         }
@@ -199,12 +209,22 @@ public actor SSHTerminalRuntime {
                         .init(
                             userAuthDelegate: SSHPasswordAuthenticationDelegate(
                                 username: configuration.username,
-                                password: configuration.password
+                                password: configuration.password,
+                                onEvent: { message in
+                                    Task {
+                                        await self.logConnectionEvent(message)
+                                    }
+                                }
                             ),
                             serverAuthDelegate: SSHKnownHostKeyDelegate(
                                 host: configuration.connection.host,
                                 port: configuration.connection.port,
-                                trustStore: hostKeyTrustStore
+                                trustStore: hostKeyTrustStore,
+                                onEvent: { message in
+                                    Task {
+                                        await self.logConnectionEvent(message)
+                                    }
+                                }
                             )
                         )
                     ),
@@ -219,6 +239,9 @@ public actor SSHTerminalRuntime {
                 }
 
                 sshHandler.createChannel(shellPromise) { childChannel, _ in
+                    Task {
+                        await self.logConnectionEvent("SSH session channel opened. Requesting interactive shell.")
+                    }
                     let shellHandler = SSHInteractiveShellHandler(
                         onOutput: { output in
                             Task {
@@ -236,11 +259,12 @@ public actor SSHTerminalRuntime {
                         .flatMap {
                             childChannel.pipeline.addHandler(shellHandler)
                         }
-                        .flatMap {
+                        .map {
+                            // Fire-and-forget: waiting for request replies can deadlock on some SSH servers.
                             let ptyPromise = childChannel.eventLoop.makePromise(of: Void.self)
                             childChannel.pipeline.triggerUserOutboundEvent(
                                 SSHChannelRequestEvent.PseudoTerminalRequest(
-                                    wantReply: true,
+                                    wantReply: false,
                                     term: configuration.terminalType,
                                     terminalCharacterWidth: configuration.terminalSize.columns,
                                     terminalRowHeight: configuration.terminalSize.rows,
@@ -250,15 +274,14 @@ public actor SSHTerminalRuntime {
                                 ),
                                 promise: ptyPromise
                             )
-                            return ptyPromise.futureResult
-                        }
-                        .flatMap {
-                            let shellRequestPromise = childChannel.eventLoop.makePromise(of: Void.self)
+                            let shellPromise = childChannel.eventLoop.makePromise(of: Void.self)
                             childChannel.pipeline.triggerUserOutboundEvent(
-                                SSHChannelRequestEvent.ShellRequest(wantReply: true),
-                                promise: shellRequestPromise
+                                SSHChannelRequestEvent.ShellRequest(wantReply: false),
+                                promise: shellPromise
                             )
-                            return shellRequestPromise.futureResult
+                            Task {
+                                await self.logConnectionEvent("PTY and shell requests sent.")
+                            }
                         }
                 }
 
@@ -266,17 +289,33 @@ public actor SSHTerminalRuntime {
             }
 
         do {
+            state.statusMessage = "Opening TCP connection..."
+            await logConnectionEvent("Resolving host \(configuration.connection.host):\(configuration.connection.port).")
+            await publishState()
             let connectFuture: EventLoopFuture<Channel> = bootstrap.connect(
                 host: configuration.connection.host,
                 port: configuration.connection.port
             )
-            let rootChannel = try await unsafeFutureValue(connectFuture)
+            let rootChannel = try await timedFutureValue(
+                connectFuture,
+                timeoutSeconds: 20,
+                stage: "TCP connection"
+            )
+            await logConnectionEvent("TCP connection established.")
 
             guard let shellFuture = shellFutureBox.future else {
                 throw SSHRuntimeError.shellChannelUnavailable
             }
 
-            let shellChannel = try await unsafeFutureValue(shellFuture)
+            state.statusMessage = "Negotiating SSH session..."
+            await logConnectionEvent("Negotiating SSH algorithms and authenticating user \(configuration.username).")
+            await publishState()
+            let shellChannel = try await timedFutureValue(
+                shellFuture,
+                timeoutSeconds: 20,
+                stage: "SSH session negotiation"
+            )
+            await logConnectionEvent("Interactive shell request accepted by server.")
             return Transport(
                 eventLoopGroup: group,
                 rootChannel: rootChannel,
@@ -372,31 +411,117 @@ public actor SSHTerminalRuntime {
         let boxed = try await futureValue(future.map(UncheckedFutureValueBox.init))
         return boxed.value
     }
+
+    private func timedFutureValue<Value>(
+        _ future: EventLoopFuture<Value>,
+        timeoutSeconds: Double,
+        stage: String
+    ) async throws -> Value {
+        try await withThrowingTaskGroup(of: UncheckedFutureValueBox<Value>.self) { group in
+            group.addTask {
+                try await self.futureValue(future.map(UncheckedFutureValueBox.init))
+            }
+            group.addTask {
+                let duration = UInt64(timeoutSeconds * 1_000_000_000)
+                try await Task.sleep(nanoseconds: duration)
+                throw SSHRuntimeError.connectionStageTimedOut(stage)
+            }
+
+            let boxed = try await group.next()!
+            group.cancelAll()
+            return boxed.value
+        }
+    }
+
+    private func logConnectionEvent(_ message: String) async {
+        appendTerminalOutput("[SSH] \(message)\n")
+        await publishState()
+    }
+
+    private func userFacingConnectionMessage(for error: Error) -> String {
+        if case SSHRuntimeError.passwordAuthenticationNotSupported = error {
+            return "Server does not allow password authentication for this account."
+        }
+
+        if case SSHRuntimeError.connectionStageTimedOut(let stage) = error {
+            return "Connection timed out during \(stage). Check host, port, and network."
+        }
+
+        if let hostKeyError = error as? SSHKnownHostValidationError {
+            switch hostKeyError {
+            case .hostKeyMismatch:
+                return "Host key mismatch. Server identity changed or may be unsafe."
+            case .invalidHostKeyFormat:
+                return "Server returned an invalid SSH host key."
+            }
+        }
+
+        if let sshError = error as? NIOSSHError, sshError.type == .channelSetupRejected {
+            return "SSH channel was rejected by the server."
+        }
+
+        let diagnostic = (error.localizedDescription + " " + String(describing: error)).lowercased()
+
+        if diagnostic.contains("permission denied")
+            || diagnostic.contains("authentication failed")
+            || diagnostic.contains("unable to authenticate")
+            || diagnostic.contains("user authentication") {
+            return "Authentication failed. Verify username and password."
+        }
+
+        if diagnostic.contains("no such host")
+            || diagnostic.contains("name or service not known")
+            || diagnostic.contains("nodename nor servname provided")
+            || diagnostic.contains("hostname") && diagnostic.contains("could not be found") {
+            return "Host not found. Verify the server address (DNS/hostname)."
+        }
+
+        if diagnostic.contains("connection refused") {
+            return "Connection refused. SSH service may be unavailable on this port."
+        }
+
+        if diagnostic.contains("network is unreachable")
+            || diagnostic.contains("no route to host")
+            || diagnostic.contains("internet connection appears to be offline") {
+            return "Network is unreachable. Check device connectivity and VPN."
+        }
+
+        if diagnostic.contains("timed out") {
+            return "Connection timed out. Check network path and firewall."
+        }
+
+        return error.localizedDescription
+    }
+
+    private func debugConnectionErrorDescription(_ error: Error) -> String {
+        let nsError = error as NSError
+        return "\(type(of: error)): \(error.localizedDescription) [\(nsError.domain):\(nsError.code)]"
+    }
 }
 
 private final class SSHPasswordAuthenticationDelegate: NIOSSHClientUserAuthenticationDelegate, @unchecked Sendable {
     private let username: String
     private let password: String
+    private let onEvent: @Sendable (String) -> Void
 
-    init(username: String, password: String) {
+    init(username: String, password: String, onEvent: @escaping @Sendable (String) -> Void) {
         self.username = username
         self.password = password
+        self.onEvent = onEvent
     }
 
     func nextAuthenticationType(
         availableMethods: NIOSSHAvailableUserAuthenticationMethods,
         nextChallengePromise: EventLoopPromise<NIOSSHUserAuthenticationOffer?>
     ) {
+        onEvent("Server auth methods: \(availableMethods)")
         guard availableMethods.contains(.password) else {
-            nextChallengePromise.fail(
-                NSError(
-                    domain: "SSHKit.Auth",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Password authentication is not supported by this server."]
-                )
-            )
+            onEvent("Password authentication is not accepted by server.")
+            nextChallengePromise.fail(SSHRuntimeError.passwordAuthenticationNotSupported)
             return
         }
+
+        onEvent("Sending password authentication request.")
 
         nextChallengePromise.succeed(
             NIOSSHUserAuthenticationOffer(
@@ -412,16 +537,24 @@ private final class SSHKnownHostKeyDelegate: NIOSSHClientServerAuthenticationDel
     private let host: String
     private let port: Int
     private let trustStore: SSHHostKeyTrustStore
+    private let onEvent: @Sendable (String) -> Void
 
-    init(host: String, port: Int, trustStore: SSHHostKeyTrustStore) {
+    init(
+        host: String,
+        port: Int,
+        trustStore: SSHHostKeyTrustStore,
+        onEvent: @escaping @Sendable (String) -> Void
+    ) {
         self.host = host
         self.port = port
         self.trustStore = trustStore
+        self.onEvent = onEvent
     }
 
     func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
         let openSSHPublicKey = String(openSSHPublicKey: hostKey)
         let eventLoop = validationCompletePromise.futureResult.eventLoop
+        onEvent("Validating server host key for \(host):\(port).")
 
         Task {
             do {
@@ -433,10 +566,12 @@ private final class SSHKnownHostKeyDelegate: NIOSSHClientServerAuthenticationDel
                 eventLoop.execute {
                     validationCompletePromise.succeed(())
                 }
+                self.onEvent("Host key trusted.")
             } catch {
                 eventLoop.execute {
                     validationCompletePromise.fail(error)
                 }
+                self.onEvent("Host key validation failed: \(error.localizedDescription)")
             }
         }
     }

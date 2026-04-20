@@ -18,10 +18,26 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
-        UISceneConfiguration(
-            name: "Phone Control Configuration",
+        let configurationName: String
+        let delegateClass: AnyClass
+
+        switch connectingSceneSession.role {
+        case .windowExternalDisplay:
+            configurationName = "Desktop External Configuration"
+            delegateClass = DesktopSceneDelegate.self
+        default:
+            configurationName = "Phone Control Configuration"
+            delegateClass = ControlSceneDelegate.self
+        }
+
+        let configuration = UISceneConfiguration(
+            name: configurationName,
             sessionRole: connectingSceneSession.role
         )
+        configuration.delegateClass = delegateClass
+        configuration.sceneClass = UIWindowScene.self
+        configuration.storyboard = nil
+        return configuration
     }
 }
 

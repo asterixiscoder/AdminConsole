@@ -18,6 +18,7 @@
 		A1B2C3D4E5F600000000006A /* PhaseZeroBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000016 /* PhaseZeroBridge.swift */; };
 		A1B2C3D4E5F6000000000078 /* TerminalSelectionGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */; };
 		A1B2C3D4E5F6000000000079 /* SSHTerminalSessionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000018 /* SSHTerminalSessionViewController.swift */; };
+		A1B2C3D4E5F600000000007A /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000019 /* LaunchScreen.storyboard */; };
 		A1B2C3D4E5F600000000006B /* ConnectionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000080 /* ConnectionKit */; };
 		A1B2C3D4E5F600000000006C /* DesktopCompositor in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000081 /* DesktopCompositor */; };
 		A1B2C3D4E5F600000000006D /* DesktopDomain in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000082 /* DesktopDomain */; };
@@ -67,6 +68,7 @@
 		A1B2C3D4E5F6000000000016 /* PhaseZeroBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PhaseZeroBridge.swift; path = ../Packages/AppModules/Sources/AppPlatform/AdminConsoleBootstrap.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TerminalSelectionGeometry.swift; path = ../Packages/AppModules/Sources/AppPlatform/TerminalSelectionGeometry.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000018 /* SSHTerminalSessionViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTerminalSessionViewController.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6000000000019 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,6 +138,7 @@
 				A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */,
 				A1B2C3D4E5F6000000000016 /* PhaseZeroBridge.swift */,
 				A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */,
+				A1B2C3D4E5F6000000000019 /* LaunchScreen.storyboard */,
 				A1B2C3D4E5F6000000000005 /* ViewControllers */,
 				A1B2C3D4E5F600000000000A /* Info.plist */,
 			);
@@ -305,6 +308,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D4E5F600000000007A /* LaunchScreen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

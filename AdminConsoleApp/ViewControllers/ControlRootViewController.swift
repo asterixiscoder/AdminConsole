@@ -217,39 +217,225 @@ final class RebootAppModel {
 }
 
 @MainActor
-final class RebootRootTabBarController: UITabBarController {
+protocol RebootPhoneRouting: AnyObject {
+    func showHostDetails(hostID: UUID)
+    func showHostEditor(existingHostID: UUID?)
+    func showTerminal()
+    func switchToConnections(hostID: UUID?)
+}
+
+@MainActor
+final class RebootRootViewController: UIViewController, RebootPhoneRouting {
+    private enum Tab: CaseIterable {
+        case vaults
+        case connections
+        case profile
+
+        var title: String {
+            switch self {
+            case .vaults: return "Vaults"
+            case .connections: return "Connections"
+            case .profile: return "Profile"
+            }
+        }
+
+        var iconName: String {
+            switch self {
+            case .vaults: return "shippingbox.fill"
+            case .connections: return "bolt.horizontal.circle.fill"
+            case .profile: return "person.crop.circle.fill"
+            }
+        }
+    }
+
     private let model = RebootAppModel()
+    private let contentContainer = UIView()
+    private let tabBarContainer = UIView()
+    private let tabStack = UIStackView()
+    private var tabButtons: [Tab: UIButton] = [:]
+    private var selectedTab: Tab = .vaults
+    private var currentChild: UIViewController?
+
+    private lazy var vaultsViewController = RebootVaultsViewController(model: model, router: self)
+    private lazy var connectionsViewController = RebootConnectionsViewController(model: model, router: self)
+    private lazy var profileViewController = RebootProfileViewController(model: model)
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        configureAppearance()
-
-        let vaults = UINavigationController(rootViewController: RebootVaultsViewController(model: model))
-        vaults.tabBarItem = UITabBarItem(title: "Vaults", image: UIImage(systemName: "shippingbox.fill"), selectedImage: UIImage(systemName: "shippingbox.fill"))
-
-        let connections = UINavigationController(rootViewController: RebootConnectionsViewController(model: model))
-        connections.tabBarItem = UITabBarItem(title: "Connections", image: UIImage(systemName: "bolt.horizontal.circle"), selectedImage: UIImage(systemName: "bolt.horizontal.circle.fill"))
-
-        let profile = UINavigationController(rootViewController: RebootProfileViewController(model: model))
-        profile.tabBarItem = UITabBarItem(title: "Profile", image: UIImage(systemName: "person.crop.circle"), selectedImage: UIImage(systemName: "person.crop.circle.fill"))
-
-        setViewControllers([vaults, connections, profile], animated: false)
-        selectedIndex = 0
+        configureLayout()
+        switchToTab(.vaults, animated: false)
     }
 
-    private func configureAppearance() {
-        let tabAppearance = UITabBarAppearance()
-        tabAppearance.configureWithOpaqueBackground()
-        tabAppearance.backgroundColor = UIColor.secondarySystemBackground
-        tabBar.standardAppearance = tabAppearance
-        tabBar.scrollEdgeAppearance = tabAppearance
-        tabBar.isTranslucent = false
+    private func configureLayout() {
+        contentContainer.translatesAutoresizingMaskIntoConstraints = false
+        tabBarContainer.translatesAutoresizingMaskIntoConstraints = false
+        tabBarContainer.backgroundColor = UIColor.secondarySystemBackground
+        tabBarContainer.layer.cornerRadius = 28
+        tabBarContainer.layer.shadowColor = UIColor.black.cgColor
+        tabBarContainer.layer.shadowOpacity = 0.08
+        tabBarContainer.layer.shadowRadius = 20
+        tabBarContainer.layer.shadowOffset = CGSize(width: 0, height: 10)
+
+        tabStack.translatesAutoresizingMaskIntoConstraints = false
+        tabStack.axis = .horizontal
+        tabStack.spacing = 10
+        tabStack.distribution = .fillEqually
+
+        view.addSubview(contentContainer)
+        view.addSubview(tabBarContainer)
+        tabBarContainer.addSubview(tabStack)
+
+        for tab in Tab.allCases {
+            let button = makeTabButton(for: tab)
+            tabButtons[tab] = button
+            tabStack.addArrangedSubview(button)
+        }
+
+        NSLayoutConstraint.activate([
+            contentContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            contentContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            contentContainer.topAnchor.constraint(equalTo: view.topAnchor),
+            contentContainer.bottomAnchor.constraint(equalTo: tabBarContainer.topAnchor, constant: -12),
+
+            tabBarContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+            tabBarContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+            tabBarContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            tabBarContainer.heightAnchor.constraint(equalToConstant: 78),
+
+            tabStack.leadingAnchor.constraint(equalTo: tabBarContainer.leadingAnchor, constant: 12),
+            tabStack.trailingAnchor.constraint(equalTo: tabBarContainer.trailingAnchor, constant: -12),
+            tabStack.topAnchor.constraint(equalTo: tabBarContainer.topAnchor, constant: 10),
+            tabStack.bottomAnchor.constraint(equalTo: tabBarContainer.bottomAnchor, constant: -10)
+        ])
+    }
+
+    private func makeTabButton(for tab: Tab) -> UIButton {
+        let button = UIButton(type: .system)
+        button.tag = Tab.allCases.firstIndex(of: tab) ?? 0
+        button.configuration = .plain()
+        button.configuration?.image = UIImage(systemName: tab.iconName)
+        button.configuration?.title = tab.title
+        button.configuration?.imagePlacement = .top
+        button.configuration?.imagePadding = 6
+        button.configuration?.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = .systemFont(ofSize: 10, weight: .semibold)
+            return outgoing
+        }
+        button.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 4)
+        button.titleLabel?.numberOfLines = 1
+        button.titleLabel?.adjustsFontSizeToFitWidth = true
+        button.titleLabel?.minimumScaleFactor = 0.75
+        button.layer.cornerRadius = 22
+        button.addTarget(self, action: #selector(tabTapped(_:)), for: .touchUpInside)
+        return button
+    }
+
+    @objc
+    private func tabTapped(_ sender: UIButton) {
+        guard Tab.allCases.indices.contains(sender.tag) else { return }
+        switchToTab(Tab.allCases[sender.tag], animated: false)
+    }
+
+    private func switchToTab(_ tab: Tab, animated: Bool) {
+        selectedTab = tab
+        updateTabSelection()
+
+        let nextController: UIViewController
+        switch tab {
+        case .vaults:
+            nextController = vaultsViewController
+        case .connections:
+            nextController = connectionsViewController
+        case .profile:
+            nextController = profileViewController
+        }
+
+        guard currentChild !== nextController else { return }
+
+        let previousChild = currentChild
+        previousChild?.willMove(toParent: nil)
+        previousChild?.view.removeFromSuperview()
+        previousChild?.removeFromParent()
+
+        addChild(nextController)
+        nextController.view.translatesAutoresizingMaskIntoConstraints = false
+        contentContainer.addSubview(nextController.view)
+        NSLayoutConstraint.activate([
+            nextController.view.leadingAnchor.constraint(equalTo: contentContainer.leadingAnchor),
+            nextController.view.trailingAnchor.constraint(equalTo: contentContainer.trailingAnchor),
+            nextController.view.topAnchor.constraint(equalTo: contentContainer.topAnchor),
+            nextController.view.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor)
+        ])
+        nextController.didMove(toParent: self)
+        currentChild = nextController
+
+        if animated {
+            nextController.view.alpha = 0
+            UIView.animate(withDuration: 0.2) {
+                nextController.view.alpha = 1
+            }
+        }
+    }
+
+    private func updateTabSelection() {
+        for (tab, button) in tabButtons {
+            let isSelected = tab == selectedTab
+            button.configuration?.baseForegroundColor = isSelected ? .systemBlue : .label
+            button.backgroundColor = isSelected ? UIColor.systemBlue.withAlphaComponent(0.14) : .clear
+        }
+    }
+
+    private func topPresenter() -> UIViewController {
+        var presenter: UIViewController = self
+        while let presented = presenter.presentedViewController {
+            presenter = presented
+        }
+        return presenter
+    }
+
+    private func presentFullscreen(_ controller: UIViewController) {
+        controller.modalPresentationStyle = .fullScreen
+        topPresenter().present(controller, animated: true)
+    }
+
+    func showHostDetails(hostID: UUID) {
+        presentFullscreen(RebootHostDetailsViewController(model: model, hostID: hostID, router: self))
+    }
+
+    func showHostEditor(existingHostID: UUID?) {
+        presentFullscreen(RebootHostEditorViewController(model: model, existingHostID: existingHostID))
+    }
+
+    func showTerminal() {
+        presentFullscreen(RebootTerminalViewController(model: model))
+    }
+
+    func switchToConnections(hostID: UUID?) {
+        let switchAction = {
+            if let hostID {
+                NotificationCenter.default.post(
+                    name: .rebootConnectHostRequested,
+                    object: nil,
+                    userInfo: ["hostID": hostID]
+                )
+            }
+            self.switchToTab(.connections, animated: false)
+        }
+
+        if presentedViewController != nil {
+            dismiss(animated: true) {
+                switchAction()
+            }
+        } else {
+            switchAction()
+        }
     }
 }
 
 @MainActor
-final class RebootVaultsViewController: UITableViewController {
+final class RebootVaultsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UITextFieldDelegate {
     private enum FilterScope: Int {
         case all
         case favorites
@@ -271,15 +457,20 @@ final class RebootVaultsViewController: UITableViewController {
     }
 
     private let model: RebootAppModel
+    private weak var router: (any RebootPhoneRouting)?
     private var sections: [Section] = []
+    private let titleLabel = UILabel()
+    private let addButton = UIButton(type: .system)
     private let searchField = UITextField()
     private let scopeControl = UISegmentedControl(items: ["All", "Favorites", "Recents"])
+    private let tableView = UITableView(frame: .zero, style: .plain)
     private var searchText: String = ""
     private var selectedScope: FilterScope = .all
 
-    init(model: RebootAppModel) {
+    init(model: RebootAppModel, router: any RebootPhoneRouting) {
         self.model = model
-        super.init(style: .plain)
+        self.router = router
+        super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
@@ -289,34 +480,78 @@ final class RebootVaultsViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Vaults"
-        navigationController?.navigationBar.prefersLargeTitles = false
-        navigationItem.largeTitleDisplayMode = .never
-        let navAppearance = UINavigationBarAppearance()
-        navAppearance.configureWithOpaqueBackground()
-        navAppearance.backgroundColor = .systemBackground
-        navigationItem.standardAppearance = navAppearance
-        navigationItem.scrollEdgeAppearance = navAppearance
         view.backgroundColor = .systemBackground
-        tableView.backgroundColor = .systemBackground
-        tableView.layer.cornerRadius = 0
-        tableView.clipsToBounds = true
-        tableView.separatorStyle = .singleLine
-        tableView.sectionHeaderTopPadding = 12
-        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addHost))
-        configureSearchAndScope()
+        configureHeader()
+        configureTableView()
         reloadSections()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        updateBottomInsets()
         reloadSections()
     }
 
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        updateBottomInsets()
+    private func configureHeader() {
+        titleLabel.text = "Vaults"
+        titleLabel.font = .systemFont(ofSize: 38, weight: .bold)
+
+        addButton.configuration = .filled()
+        addButton.configuration?.image = UIImage(systemName: "plus")
+        addButton.configuration?.baseForegroundColor = .label
+        addButton.configuration?.baseBackgroundColor = UIColor.secondarySystemBackground
+        addButton.configuration?.cornerStyle = .capsule
+        addButton.addTarget(self, action: #selector(addHost), for: .touchUpInside)
+
+        searchField.placeholder = "Search hosts"
+        searchField.borderStyle = .roundedRect
+        searchField.autocapitalizationType = .none
+        searchField.autocorrectionType = .no
+        searchField.clearButtonMode = .whileEditing
+        searchField.returnKeyType = .done
+        searchField.delegate = self
+        searchField.addTarget(self, action: #selector(searchTextChanged), for: .editingChanged)
+
+        scopeControl.selectedSegmentIndex = 0
+        scopeControl.addTarget(self, action: #selector(scopeChanged), for: .valueChanged)
+
+        let titleRow = UIStackView(arrangedSubviews: [titleLabel, UIView(), addButton])
+        titleRow.axis = .horizontal
+        titleRow.alignment = .center
+
+        let headerStack = UIStackView(arrangedSubviews: [titleRow, searchField, scopeControl])
+        headerStack.axis = .vertical
+        headerStack.spacing = 16
+        headerStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(headerStack)
+
+        addButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            addButton.widthAnchor.constraint(equalToConstant: 56),
+            addButton.heightAnchor.constraint(equalToConstant: 56),
+            headerStack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            headerStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            headerStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12)
+        ])
+    }
+
+    private func configureTableView() {
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.backgroundColor = .systemBackground
+        tableView.separatorStyle = .singleLine
+        tableView.sectionHeaderTopPadding = 12
+        tableView.keyboardDismissMode = .interactive
+        tableView.contentInset = UIEdgeInsets(top: 12, left: 0, bottom: 120, right: 0)
+        tableView.scrollIndicatorInsets = tableView.contentInset
+        tableView.dataSource = self
+        tableView.delegate = self
+        view.addSubview(tableView)
+
+        NSLayoutConstraint.activate([
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: scopeControl.bottomAnchor, constant: 20),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
     }
 
     private func reloadSections() {
@@ -342,17 +577,17 @@ final class RebootVaultsViewController: UITableViewController {
         tableView.reloadData()
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { sections.count }
+    func numberOfSections(in tableView: UITableView) -> Int { sections.count }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         hosts(for: sections[section]).count
     }
 
-    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         sections[section].title
     }
 
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         let host = hosts(for: sections[indexPath.section])[indexPath.row]
         cell.textLabel?.text = host.name
@@ -366,12 +601,10 @@ final class RebootVaultsViewController: UITableViewController {
         return cell
     }
 
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let host = hosts(for: sections[indexPath.section])[indexPath.row]
-        let controller = RebootHostDetailsViewController(model: model, hostID: host.id)
-        controller.hidesBottomBarWhenPushed = true
-        navigationController?.pushViewController(controller, animated: true)
+        router?.showHostDetails(hostID: host.id)
     }
 
     private func hosts(for section: Section) -> [RebootHost] {
@@ -384,29 +617,7 @@ final class RebootVaultsViewController: UITableViewController {
 
     @objc
     private func addHost() {
-        let controller = RebootHostEditorViewController(model: model, existingHostID: nil)
-        controller.hidesBottomBarWhenPushed = true
-        navigationController?.pushViewController(controller, animated: true)
-    }
-
-    private func configureSearchAndScope() {
-        searchField.placeholder = "Search hosts"
-        searchField.borderStyle = .roundedRect
-        searchField.autocapitalizationType = .none
-        searchField.autocorrectionType = .no
-        searchField.clearButtonMode = .whileEditing
-        searchField.addTarget(self, action: #selector(searchTextChanged), for: .editingChanged)
-
-        scopeControl.selectedSegmentIndex = 0
-        scopeControl.addTarget(self, action: #selector(scopeChanged), for: .valueChanged)
-        let header = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 94))
-        searchField.frame = CGRect(x: 16, y: 8, width: header.bounds.width - 32, height: 38)
-        scopeControl.frame = CGRect(x: 16, y: 52, width: header.bounds.width - 32, height: 34)
-        searchField.autoresizingMask = [.flexibleWidth]
-        scopeControl.autoresizingMask = [.flexibleWidth]
-        header.addSubview(searchField)
-        header.addSubview(scopeControl)
-        tableView.tableHeaderView = header
+        router?.showHostEditor(existingHostID: nil)
     }
 
     @objc
@@ -454,10 +665,9 @@ final class RebootVaultsViewController: UITableViewController {
         return formatter
     }()
 
-    private func updateBottomInsets() {
-        let bottomPadding = (tabBarController?.tabBar.bounds.height ?? 0) + 24
-        tableView.contentInset.bottom = bottomPadding
-        tableView.verticalScrollIndicatorInsets.bottom = bottomPadding
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
     }
 }
 
@@ -465,12 +675,14 @@ final class RebootVaultsViewController: UITableViewController {
 final class RebootHostDetailsViewController: UIViewController {
     private let model: RebootAppModel
     private let hostID: UUID
-
+    private weak var router: (any RebootPhoneRouting)?
+    private let titleLabel = UILabel()
     private let summaryLabel = UILabel()
 
-    init(model: RebootAppModel, hostID: UUID) {
+    init(model: RebootAppModel, hostID: UUID, router: any RebootPhoneRouting) {
         self.model = model
         self.hostID = hostID
+        self.router = router
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -482,12 +694,9 @@ final class RebootHostDetailsViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        title = "Host"
-        navigationItem.largeTitleDisplayMode = .never
-
+        configureHeader()
         summaryLabel.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
         summaryLabel.numberOfLines = 0
-        summaryLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let openButton = UIButton(type: .system)
         openButton.configuration = .filled()
@@ -522,13 +731,14 @@ final class RebootHostDetailsViewController: UIViewController {
 
         let scrollView = UIScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.keyboardDismissMode = .interactive
         view.addSubview(scrollView)
         scrollView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
             scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 16),
             stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -16),
@@ -543,6 +753,32 @@ final class RebootHostDetailsViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         refresh()
+    }
+
+    private func configureHeader() {
+        let closeButton = UIButton(type: .system)
+        closeButton.configuration = .plain()
+        closeButton.configuration?.image = UIImage(systemName: "chevron.left")
+        closeButton.configuration?.baseForegroundColor = .label
+        closeButton.addTarget(self, action: #selector(closeScreen), for: .touchUpInside)
+
+        titleLabel.text = "Host"
+        titleLabel.font = .systemFont(ofSize: 34, weight: .bold)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(closeButton)
+        view.addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
+
+            titleLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            titleLabel.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
+            titleLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
+        ])
     }
 
     private func refresh() {
@@ -561,34 +797,13 @@ final class RebootHostDetailsViewController: UIViewController {
 
     @objc
     private func openInConnections() {
-        NotificationCenter.default.post(
-            name: .rebootConnectHostRequested,
-            object: nil,
-            userInfo: ["hostID": hostID]
-        )
-        guard let tabBar = tabBarController else { return }
-        tabBar.selectedIndex = 1
+        router?.switchToConnections(hostID: hostID)
     }
 
     @objc
     private func connectNow() {
         guard let host = model.hostStore.host(id: hostID) else { return }
-
-        let alert = UIAlertController(title: "Connect \(host.name)", message: "Enter SSH password", preferredStyle: .alert)
-        alert.addTextField { field in
-            field.placeholder = "Password"
-            field.isSecureTextEntry = true
-        }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Connect", style: .default) { [weak self, weak alert] _ in
-            guard let self else { return }
-            let password = alert?.textFields?.first?.text ?? ""
-            self.model.connect(host: host, password: password)
-            let terminal = RebootTerminalViewController(model: self.model)
-            terminal.hidesBottomBarWhenPushed = true
-            self.navigationController?.pushViewController(terminal, animated: true)
-        })
-        present(alert, animated: true)
+        presentPasswordPrompt(for: host)
     }
 
     @objc
@@ -599,15 +814,34 @@ final class RebootHostDetailsViewController: UIViewController {
 
     @objc
     private func editHost() {
-        let controller = RebootHostEditorViewController(model: model, existingHostID: hostID)
-        controller.hidesBottomBarWhenPushed = true
-        navigationController?.pushViewController(controller, animated: true)
+        router?.showHostEditor(existingHostID: hostID)
     }
 
     @objc
     private func deleteHost() {
         model.hostStore.delete(id: hostID)
-        navigationController?.popViewController(animated: true)
+        dismiss(animated: true)
+    }
+
+    @objc
+    private func closeScreen() {
+        dismiss(animated: true)
+    }
+
+    private func presentPasswordPrompt(for host: RebootHost) {
+        view.endEditing(true)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.presentedViewController == nil else { return }
+            let prompt = RebootPasswordPromptViewController(hostName: host.name) { [weak self] password in
+                guard let self else { return }
+                self.model.connect(host: host, password: password)
+                self.router?.showTerminal()
+            }
+            prompt.modalPresentationStyle = .overFullScreen
+            prompt.modalTransitionStyle = .crossDissolve
+            self.present(prompt, animated: true)
+        }
     }
 }
 
@@ -616,6 +850,9 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
     private let model: RebootAppModel
     private let existingHostID: UUID?
 
+    private let titleLabel = UILabel()
+    private let scrollView = UIScrollView()
+    private let contentStack = UIStackView()
     private let vaultField = UITextField()
     private let nameField = UITextField()
     private let noteField = UITextField()
@@ -638,56 +875,123 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        title = existingHostID == nil ? "New Host" : "Edit Host"
-        navigationItem.largeTitleDisplayMode = .never
+        configureChrome()
+        configureFields()
+        configureKeyboardHandling()
+        configureContent()
+        loadHostValues()
+    }
 
+    private func configureChrome() {
+        let closeButton = UIButton(type: .system)
+        closeButton.configuration = .plain()
+        closeButton.configuration?.image = UIImage(systemName: "chevron.left")
+        closeButton.configuration?.baseForegroundColor = .label
+        closeButton.addTarget(self, action: #selector(closeScreen), for: .touchUpInside)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.text = existingHostID == nil ? "New Host" : "Edit Host"
+        titleLabel.font = .systemFont(ofSize: 34, weight: .bold)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(closeButton)
+        view.addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
+
+            titleLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            titleLabel.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
+            titleLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
+        ])
+    }
+
+    private func configureFields() {
         [vaultField, nameField, noteField, hostField, portField, userField].forEach {
             $0.borderStyle = .roundedRect
             $0.autocapitalizationType = .none
             $0.autocorrectionType = .no
             $0.delegate = self
+            $0.clearButtonMode = .whileEditing
         }
 
         vaultField.placeholder = "Vault"
+        vaultField.returnKeyType = .next
         nameField.placeholder = "Name"
+        nameField.returnKeyType = .next
         noteField.placeholder = "Note"
+        noteField.returnKeyType = .next
         hostField.placeholder = "Host"
+        hostField.returnKeyType = .next
         portField.placeholder = "Port"
         portField.keyboardType = .numberPad
         userField.placeholder = "Username"
+        userField.returnKeyType = .done
+    }
 
+    private func configureKeyboardHandling() {
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        tap.cancelsTouchesInView = false
+        view.addGestureRecognizer(tap)
+
+        let toolbar = UIToolbar()
+        toolbar.sizeToFit()
+        toolbar.items = [
+            UIBarButtonItem(title: "Previous", style: .plain, target: self, action: #selector(focusPreviousField)),
+            UIBarButtonItem(title: "Next", style: .plain, target: self, action: #selector(focusNextField)),
+            UIBarButtonItem.flexibleSpace(),
+            UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(dismissKeyboard))
+        ]
+
+        [vaultField, nameField, noteField, hostField, portField, userField].forEach {
+            $0.inputAccessoryView = toolbar
+        }
+    }
+
+    private func configureContent() {
         let saveButton = UIButton(type: .system)
         saveButton.configuration = .filled()
-        saveButton.configuration?.title = "Save"
+        saveButton.configuration?.title = "Save Host"
         saveButton.addTarget(self, action: #selector(saveHost), for: .touchUpInside)
 
-        let favoriteRow = UIStackView(arrangedSubviews: [UILabel(), favoriteSwitch])
-        (favoriteRow.arrangedSubviews.first as? UILabel)?.text = "Favorite"
+        let favoriteLabel = UILabel()
+        favoriteLabel.text = "Favorite"
+        favoriteLabel.font = .preferredFont(forTextStyle: .body)
+
+        let favoriteRow = UIStackView(arrangedSubviews: [favoriteLabel, favoriteSwitch])
         favoriteRow.axis = .horizontal
         favoriteRow.distribution = .equalSpacing
 
-        let stack = UIStackView(arrangedSubviews: [vaultField, nameField, noteField, hostField, portField, userField, favoriteRow, saveButton])
-        stack.axis = .vertical
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.axis = .vertical
+        contentStack.spacing = 12
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        [vaultField, nameField, noteField, hostField, portField, userField, favoriteRow, saveButton].forEach {
+            contentStack.addArrangedSubview($0)
+        }
 
-        let scrollView = UIScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.keyboardDismissMode = .interactive
         view.addSubview(scrollView)
-        scrollView.addSubview(stack)
+        scrollView.addSubview(contentStack)
 
         NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -16),
-            stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -32)
-        ])
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            scrollView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
 
+            contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 16),
+            contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -16),
+            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 16),
+            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -24),
+            contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -32)
+        ])
+    }
+
+    private func loadHostValues() {
         if let existingHostID, let host = model.hostStore.host(id: existingHostID) {
             vaultField.text = host.vault
             nameField.text = host.name
@@ -736,19 +1040,73 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
             )
         }
 
-        navigationController?.popViewController(animated: true)
+        dismiss(animated: true)
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        saveHost()
+        switch textField {
+        case vaultField:
+            nameField.becomeFirstResponder()
+        case nameField:
+            noteField.becomeFirstResponder()
+        case noteField:
+            hostField.becomeFirstResponder()
+        case hostField:
+            portField.becomeFirstResponder()
+        case portField:
+            userField.becomeFirstResponder()
+        case userField:
+            saveHost()
+        default:
+            textField.resignFirstResponder()
+        }
         return true
+    }
+
+    @objc
+    private func focusPreviousField() {
+        focusField(offset: -1)
+    }
+
+    @objc
+    private func focusNextField() {
+        focusField(offset: 1)
+    }
+
+    private func focusField(offset: Int) {
+        let fields = [vaultField, nameField, noteField, hostField, portField, userField]
+        guard let currentIndex = fields.firstIndex(where: { $0.isFirstResponder }) else {
+            fields.first?.becomeFirstResponder()
+            return
+        }
+
+        let nextIndex = currentIndex + offset
+        guard fields.indices.contains(nextIndex) else {
+            dismissKeyboard()
+            return
+        }
+        fields[nextIndex].becomeFirstResponder()
+    }
+
+    @objc
+    private func dismissKeyboard() {
+        view.endEditing(true)
+    }
+
+    @objc
+    private func closeScreen() {
+        dismiss(animated: true)
     }
 }
 
 @MainActor
 final class RebootConnectionsViewController: UIViewController, UITextFieldDelegate {
     private let model: RebootAppModel
+    private weak var router: (any RebootPhoneRouting)?
 
+    private let titleLabel = UILabel()
+    private let scrollView = UIScrollView()
+    private let contentStack = UIStackView()
     private let connectBar = UIView()
     private let hostField = UITextField()
     private let portField = UITextField()
@@ -765,9 +1123,11 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     private let statusLabel = UILabel()
     private var terminalObserverID: UUID?
     private var didAutoOpenTerminal = false
+    private var lastFailureSignature: String?
 
-    init(model: RebootAppModel) {
+    init(model: RebootAppModel, router: any RebootPhoneRouting) {
         self.model = model
+        self.router = router
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -778,8 +1138,9 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Connections"
         view.backgroundColor = UIColor(red: 0.95, green: 0.96, blue: 0.97, alpha: 1)
+        configureFormChrome()
+        configureHeader()
 
         configureConnectBar()
         configureQuickHostsCard()
@@ -794,12 +1155,16 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         }
 
         hostField.placeholder = "Host"
+        hostField.returnKeyType = .next
         portField.placeholder = "Port"
         portField.keyboardType = .numberPad
         portField.text = "22"
+        userField.returnKeyType = .next
         userField.placeholder = "Username"
         passwordField.placeholder = "Password"
         passwordField.isSecureTextEntry = true
+        passwordField.returnKeyType = .go
+        configureKeyboardAccessory()
 
         let disconnect = UIButton(type: .system)
         disconnect.configuration = .tinted()
@@ -821,16 +1186,25 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         controls.spacing = 8
         controls.distribution = .fillEqually
 
-        let stack = UIStackView(arrangedSubviews: [connectBar, credentialsRow, passwordField, sessionCard, quickHostsCard, controls, statusLabel])
-        stack.axis = .vertical
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.axis = .vertical
+        contentStack.spacing = 12
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        [connectBar, credentialsRow, passwordField, sessionCard, quickHostsCard, controls, statusLabel].forEach { contentStack.addArrangedSubview($0) }
 
-        view.addSubview(stack)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.keyboardDismissMode = .interactive
+        view.addSubview(scrollView)
+        scrollView.addSubview(contentStack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            scrollView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 16),
+            contentStack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -16),
+            contentStack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 16),
+            contentStack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -16),
+            contentStack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -32)
         ])
 
         NotificationCenter.default.addObserver(
@@ -897,13 +1271,20 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
 
     @objc
     private func openTerminal() {
-        let controller = RebootTerminalViewController(model: model)
-        controller.hidesBottomBarWhenPushed = true
-        navigationController?.pushViewController(controller, animated: true)
+        router?.showTerminal()
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        connectSSH()
+        switch textField {
+        case hostField:
+            userField.becomeFirstResponder()
+        case userField:
+            passwordField.becomeFirstResponder()
+        case passwordField:
+            connectSSH()
+        default:
+            textField.resignFirstResponder()
+        }
         return true
     }
 
@@ -941,6 +1322,19 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         }
     }
 
+    private func configureHeader() {
+        titleLabel.text = "Connections"
+        titleLabel.font = .systemFont(ofSize: 36, weight: .bold)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            titleLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
+        ])
+    }
+
     private func prefill(_ host: RebootHost) {
         model.selectedHostID = host.id
         hostField.text = host.hostname
@@ -949,20 +1343,20 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     }
 
     private func promptPasswordAndConnect(host: RebootHost) {
-        let alert = UIAlertController(title: "Connect \(host.name)", message: "Enter SSH password", preferredStyle: .alert)
-        alert.addTextField { field in
-            field.placeholder = "Password"
-            field.isSecureTextEntry = true
+        view.endEditing(true)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.presentedViewController == nil else { return }
+            let prompt = RebootPasswordPromptViewController(hostName: host.name) { [weak self] password in
+                guard let self else { return }
+                self.passwordField.text = ""
+                self.model.connect(host: host, password: password)
+                self.openTerminalIfNeeded()
+            }
+            prompt.modalPresentationStyle = .overFullScreen
+            prompt.modalTransitionStyle = .crossDissolve
+            self.present(prompt, animated: true)
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Connect", style: .default) { [weak self, weak alert] _ in
-            guard let self else { return }
-            let password = alert?.textFields?.first?.text ?? ""
-            self.passwordField.text = ""
-            self.model.connect(host: host, password: password)
-            self.openTerminalIfNeeded()
-        })
-        present(alert, animated: true)
     }
 
     @objc
@@ -1082,6 +1476,30 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         sessionHostLabel.text = state.connectionTitle.isEmpty ? "No Active Session" : state.connectionTitle
         sessionStateLabel.text = state.sessionState.rawValue.capitalized
         sessionPreviewView.text = String(state.transcript.suffix(1200))
+
+        switch state.sessionState {
+        case .failed:
+            let signature = "\(state.connectionTitle)|\(state.statusMessage)"
+            if lastFailureSignature != signature {
+                lastFailureSignature = signature
+                presentConnectionFailureAlert(message: state.statusMessage)
+            }
+        case .connected, .idle:
+            lastFailureSignature = nil
+        case .connecting:
+            break
+        }
+    }
+
+    private func presentConnectionFailureAlert(message: String) {
+        guard presentedViewController == nil else { return }
+        let alert = UIAlertController(
+            title: "Connection Failed",
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
 
     private func openTerminalIfNeeded() {
@@ -1089,15 +1507,200 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         didAutoOpenTerminal = true
         openTerminal()
     }
+
+    private func configureFormChrome() {
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+        tap.cancelsTouchesInView = false
+        view.addGestureRecognizer(tap)
+    }
+
+    private func configureKeyboardAccessory() {
+        let toolbar = UIToolbar()
+        toolbar.sizeToFit()
+        toolbar.items = [
+            UIBarButtonItem(title: "Previous", style: .plain, target: self, action: #selector(focusPreviousField)),
+            UIBarButtonItem(title: "Next", style: .plain, target: self, action: #selector(focusNextField)),
+            UIBarButtonItem.flexibleSpace(),
+            UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(dismissKeyboard))
+        ]
+        [hostField, userField, portField, passwordField].forEach { $0.inputAccessoryView = toolbar }
+    }
+
+    @objc
+    private func focusPreviousField() {
+        focusField(offset: -1)
+    }
+
+    @objc
+    private func focusNextField() {
+        focusField(offset: 1)
+    }
+
+    private func focusField(offset: Int) {
+        let fields = [hostField, userField, portField, passwordField]
+        guard let currentIndex = fields.firstIndex(where: { $0.isFirstResponder }) else {
+            fields.first?.becomeFirstResponder()
+            return
+        }
+        let nextIndex = currentIndex + offset
+        guard fields.indices.contains(nextIndex) else {
+            dismissKeyboard()
+            return
+        }
+        fields[nextIndex].becomeFirstResponder()
+    }
+
+    @objc
+    private func dismissKeyboard() {
+        view.endEditing(true)
+    }
+}
+
+@MainActor
+final class RebootPasswordPromptViewController: UIViewController, UITextFieldDelegate {
+    private let hostName: String
+    private let onConnect: (String) -> Void
+
+    private let dimView = UIView()
+    private let cardView = UIView()
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let passwordField = UITextField()
+    private let cancelButton = UIButton(type: .system)
+    private let connectButton = UIButton(type: .system)
+
+    init(hostName: String, onConnect: @escaping (String) -> Void) {
+        self.hostName = hostName
+        self.onConnect = onConnect
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        configureLayout()
+        configureKeyboardDismissTap()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        passwordField.becomeFirstResponder()
+    }
+
+    private func configureLayout() {
+        dimView.backgroundColor = UIColor.black.withAlphaComponent(0.42)
+        dimView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(dimView)
+
+        cardView.backgroundColor = .secondarySystemBackground
+        cardView.layer.cornerRadius = 18
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(cardView)
+
+        titleLabel.text = "Connect \(hostName)"
+        titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
+        titleLabel.textColor = .label
+
+        subtitleLabel.text = "Enter SSH password"
+        subtitleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.numberOfLines = 0
+
+        passwordField.borderStyle = .roundedRect
+        passwordField.placeholder = "Password"
+        passwordField.isSecureTextEntry = true
+        passwordField.textContentType = .password
+        passwordField.autocorrectionType = .no
+        passwordField.spellCheckingType = .no
+        passwordField.smartDashesType = .no
+        passwordField.smartQuotesType = .no
+        passwordField.smartInsertDeleteType = .no
+        passwordField.keyboardType = .asciiCapable
+        passwordField.returnKeyType = .go
+        passwordField.enablesReturnKeyAutomatically = true
+        passwordField.delegate = self
+
+        cancelButton.configuration = .tinted()
+        cancelButton.configuration?.title = "Cancel"
+        cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+
+        connectButton.configuration = .filled()
+        connectButton.configuration?.title = "Connect"
+        connectButton.addTarget(self, action: #selector(connectTapped), for: .touchUpInside)
+
+        let buttons = UIStackView(arrangedSubviews: [cancelButton, connectButton])
+        buttons.axis = .horizontal
+        buttons.spacing = 10
+        buttons.distribution = .fillEqually
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel, passwordField, buttons])
+        stack.axis = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            dimView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            dimView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            dimView.topAnchor.constraint(equalTo: view.topAnchor),
+            dimView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            cardView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            cardView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            cardView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            cardView.bottomAnchor.constraint(lessThanOrEqualTo: view.keyboardLayoutGuide.topAnchor, constant: -12),
+
+            stack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -16),
+            passwordField.heightAnchor.constraint(equalToConstant: 44)
+        ])
+    }
+
+    private func configureKeyboardDismissTap() {
+        let tap = UITapGestureRecognizer(target: self, action: #selector(dimTapped))
+        dimView.addGestureRecognizer(tap)
+    }
+
+    @objc
+    private func dimTapped() {
+        dismiss(animated: true)
+    }
+
+    @objc
+    private func cancelTapped() {
+        dismiss(animated: true)
+    }
+
+    @objc
+    private func connectTapped() {
+        let password = passwordField.text ?? ""
+        dismiss(animated: true) { [onConnect] in
+            onConnect(password)
+        }
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        connectTapped()
+        return true
+    }
 }
 
 @MainActor
 final class RebootTerminalViewController: UIViewController, UITextFieldDelegate {
     private let model: RebootAppModel
+    private let titleLabel = UILabel()
     private let outputView = UITextView()
     private let tabsRow = UIStackView()
+    private let shortcutsScrollView = UIScrollView()
     private let shortcutsRow = UIStackView()
-    private let inputField = UITextField()
+    private let keyboardInputField = UITextField()
     private var terminalObserverID: UUID?
 
     init(model: RebootAppModel) {
@@ -1112,8 +1715,8 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Terminal"
         view.backgroundColor = UIColor(red: 0.07, green: 0.08, blue: 0.13, alpha: 1)
+        configureHeader()
 
         outputView.isEditable = false
         outputView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -1121,12 +1724,8 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         outputView.textColor = UIColor(red: 0.42, green: 0.86, blue: 0.97, alpha: 1)
         outputView.layer.cornerRadius = 12
         outputView.textContainerInset = UIEdgeInsets(top: 14, left: 10, bottom: 14, right: 10)
-
-        inputField.borderStyle = .roundedRect
-        inputField.placeholder = "Command"
-        inputField.autocapitalizationType = .none
-        inputField.autocorrectionType = .no
-        inputField.delegate = self
+        outputView.translatesAutoresizingMaskIntoConstraints = false
+        outputView.isSelectable = true
 
         tabsRow.axis = .horizontal
         tabsRow.spacing = 8
@@ -1141,49 +1740,97 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         tabsRow.addArrangedSubview(activeTab)
         tabsRow.addArrangedSubview(addTab)
 
+        shortcutsScrollView.showsHorizontalScrollIndicator = false
+        shortcutsScrollView.alwaysBounceHorizontal = true
+        shortcutsScrollView.alwaysBounceVertical = false
+        shortcutsScrollView.backgroundColor = UIColor(red: 0.10, green: 0.12, blue: 0.20, alpha: 1)
+        shortcutsScrollView.layer.cornerRadius = 12
+
         shortcutsRow.axis = .horizontal
-        shortcutsRow.spacing = 6
-        shortcutsRow.distribution = .fillEqually
-        let shortcutKeys: [(String, String)] = [("esc", "\u{1B}"), ("tab", "\t"), ("ctrl", "\u{3}"), ("alt", ""), ("/", "/"), ("|", "|"), ("~", "~"), ("-", "-"), ("^C", "\u{3}")]
+        shortcutsRow.spacing = 8
+        shortcutsRow.distribution = .fillProportionally
+        shortcutsRow.alignment = .fill
+        let shortcutKeys: [(String, String)] = [
+            ("esc", "\u{1B}"),
+            ("tab", "\t"),
+            ("ctrl", "\u{3}"),
+            ("alt", ""),
+            ("/", "/"),
+            ("|", "|"),
+            ("~", "~"),
+            ("-", "-"),
+            ("^C", "\u{3}"),
+            ("^\\", "\u{1C}")
+        ]
         for item in shortcutKeys {
-            let button = UIButton(type: .system)
-            button.configuration = .tinted()
-            button.configuration?.title = item.0
+            let button = makeSoftKeyButton(item.0)
             button.addAction(UIAction { [weak self] _ in
                 guard let self else { return }
                 if !item.1.isEmpty {
                     self.model.send(item.1)
                 }
             }, for: .touchUpInside)
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
             shortcutsRow.addArrangedSubview(button)
         }
-
-        let sendButton = UIButton(type: .system)
-        sendButton.configuration = .filled()
-        sendButton.configuration?.title = "Send"
-        sendButton.addTarget(self, action: #selector(sendCommand), for: .touchUpInside)
-
-        let inputRow = UIStackView(arrangedSubviews: [inputField, sendButton])
-        inputRow.axis = .horizontal
-        inputRow.spacing = 8
-        sendButton.widthAnchor.constraint(equalToConstant: 84).isActive = true
-
-        let stack = UIStackView(arrangedSubviews: [outputView, tabsRow, shortcutsRow, inputRow])
-        stack.axis = .vertical
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        view.addSubview(stack)
+        shortcutsRow.translatesAutoresizingMaskIntoConstraints = false
+        shortcutsScrollView.addSubview(shortcutsRow)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
-            stack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-            outputView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
-            tabsRow.heightAnchor.constraint(equalToConstant: 36),
-            shortcutsRow.heightAnchor.constraint(equalToConstant: 34)
+            shortcutsRow.leadingAnchor.constraint(equalTo: shortcutsScrollView.contentLayoutGuide.leadingAnchor, constant: 10),
+            shortcutsRow.trailingAnchor.constraint(equalTo: shortcutsScrollView.contentLayoutGuide.trailingAnchor, constant: -10),
+            shortcutsRow.topAnchor.constraint(equalTo: shortcutsScrollView.contentLayoutGuide.topAnchor, constant: 6),
+            shortcutsRow.bottomAnchor.constraint(equalTo: shortcutsScrollView.contentLayoutGuide.bottomAnchor, constant: -6),
+            shortcutsRow.heightAnchor.constraint(equalTo: shortcutsScrollView.frameLayoutGuide.heightAnchor, constant: -12)
         ])
 
+        let bottomStack = UIStackView(arrangedSubviews: [tabsRow, shortcutsScrollView])
+        bottomStack.axis = .vertical
+        bottomStack.spacing = 10
+        bottomStack.translatesAutoresizingMaskIntoConstraints = false
+
+        keyboardInputField.delegate = self
+        keyboardInputField.autocorrectionType = .no
+        keyboardInputField.autocapitalizationType = .none
+        keyboardInputField.spellCheckingType = .no
+        keyboardInputField.smartDashesType = .no
+        keyboardInputField.smartQuotesType = .no
+        keyboardInputField.smartInsertDeleteType = .no
+        keyboardInputField.keyboardType = .asciiCapable
+        keyboardInputField.keyboardAppearance = .dark
+        keyboardInputField.returnKeyType = .default
+        keyboardInputField.textContentType = .none
+        keyboardInputField.enablesReturnKeyAutomatically = false
+        keyboardInputField.tintColor = .clear
+        keyboardInputField.textColor = .clear
+        keyboardInputField.backgroundColor = .clear
+        keyboardInputField.translatesAutoresizingMaskIntoConstraints = false
+
+        let focusTap = UITapGestureRecognizer(target: self, action: #selector(focusKeyboard))
+        focusTap.cancelsTouchesInView = false
+        outputView.addGestureRecognizer(focusTap)
+
+        view.addSubview(outputView)
+        view.addSubview(bottomStack)
+        view.addSubview(keyboardInputField)
+        NSLayoutConstraint.activate([
+            outputView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            outputView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            outputView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 20),
+            outputView.bottomAnchor.constraint(equalTo: bottomStack.topAnchor, constant: -16),
+
+            bottomStack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            bottomStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            bottomStack.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -12),
+
+            tabsRow.heightAnchor.constraint(equalToConstant: 36),
+            shortcutsScrollView.heightAnchor.constraint(equalToConstant: 44),
+
+            keyboardInputField.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            keyboardInputField.topAnchor.constraint(equalTo: view.topAnchor),
+            keyboardInputField.widthAnchor.constraint(equalToConstant: 1),
+            keyboardInputField.heightAnchor.constraint(equalToConstant: 1)
+        ])
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -1195,8 +1842,14 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        focusKeyboard()
+    }
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        keyboardInputField.resignFirstResponder()
         if let terminalObserverID {
             model.removeTerminalObserver(id: terminalObserverID)
             self.terminalObserverID = nil
@@ -1204,7 +1857,9 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     }
 
     private func render(state: TerminalSurfaceState) {
-        outputView.text = state.transcript
+        titleLabel.text = state.connectionTitle.isEmpty ? "Terminal" : state.connectionTitle
+        let viewport = state.buffer.viewportText(insertingCursor: state.sessionState == .connected)
+        outputView.text = viewport.isEmpty ? state.statusMessage : viewport
         let length = outputView.text.utf16.count
         if length > 0 {
             outputView.scrollRangeToVisible(NSRange(location: length - 1, length: 1))
@@ -1212,15 +1867,48 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     }
 
     @objc
-    private func sendCommand() {
-        guard let text = inputField.text, !text.isEmpty else { return }
-        model.send(text + "\n")
-        inputField.text = ""
+    private func focusKeyboard() {
+        keyboardInputField.becomeFirstResponder()
+    }
+
+    func textField(
+        _ textField: UITextField,
+        shouldChangeCharactersIn range: NSRange,
+        replacementString string: String
+    ) -> Bool {
+        let currentText = textField.text ?? ""
+        guard let textRange = Range(range, in: currentText) else {
+            return false
+        }
+        let updatedText = currentText.replacingCharacters(in: textRange, with: string)
+
+        // Apply terminal delta: delete replaced range, then insert replacement.
+        if range.length > 0 {
+            for _ in 0..<range.length {
+                model.send("\u{7F}")
+            }
+        }
+        if !string.isEmpty {
+            model.send(string)
+        }
+
+        // Keep UITextField composition state in sync with keyboard to avoid duplicated first char.
+        textField.text = updatedText
+        let end = textField.endOfDocument
+        textField.selectedTextRange = textField.textRange(from: end, to: end)
+
+        // Prevent unbounded hidden-buffer growth.
+        if updatedText.count > 256 {
+            textField.text = ""
+        }
+
+        return false
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        sendCommand()
-        return true
+        model.send("\n")
+        textField.text = ""
+        return false
     }
 
     private func makeChipButton(_ title: String) -> UIButton {
@@ -1230,6 +1918,50 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         button.configuration?.baseForegroundColor = .white
         button.configuration?.cornerStyle = .medium
         return button
+    }
+
+    private func makeSoftKeyButton(_ title: String) -> UIButton {
+        let button = UIButton(type: .system)
+        button.configuration = .filled()
+        button.configuration?.title = title
+        button.configuration?.baseForegroundColor = UIColor(red: 0.69, green: 0.78, blue: 0.94, alpha: 1)
+        button.configuration?.baseBackgroundColor = UIColor(red: 0.13, green: 0.22, blue: 0.43, alpha: 1)
+        button.configuration?.cornerStyle = .capsule
+        button.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+        button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+        return button
+    }
+
+    private func configureHeader() {
+        let closeButton = UIButton(type: .system)
+        closeButton.configuration = .plain()
+        closeButton.configuration?.image = UIImage(systemName: "chevron.left")
+        closeButton.configuration?.baseForegroundColor = .white
+        closeButton.addTarget(self, action: #selector(closeScreen), for: .touchUpInside)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.text = "Terminal"
+        titleLabel.font = .systemFont(ofSize: 32, weight: .bold)
+        titleLabel.textColor = .white
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(closeButton)
+        view.addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
+
+            titleLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            titleLabel.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
+            titleLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
+        ])
+    }
+
+    @objc
+    private func closeScreen() {
+        dismiss(animated: true)
     }
 }
 
