@@ -208,7 +208,7 @@ final class RebootAppModel {
                 username: host.username,
                 password: resolvedPassword,
                 terminalType: "xterm-256color",
-                terminalSize: TerminalSize(columns: 60, rows: 30, pixelWidth: 900, pixelHeight: 1200)
+                terminalSize: TerminalSize(columns: 72, rows: 30, pixelWidth: 1080, pixelHeight: 1200)
             )
 
             let didConnect = await runtime.connect(using: config)
@@ -290,7 +290,7 @@ final class RebootAppModel {
     }
 
     func resizeTerminal(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) {
-        let normalizedColumns = max(40, min(60, columns))
+        let normalizedColumns = max(48, min(72, columns))
         let normalizedRows = max(18, rows)
         Task {
             await runtime.resize(
@@ -1856,6 +1856,8 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         outputView.textColor = UIColor(red: 0.42, green: 0.86, blue: 0.97, alpha: 1)
         outputView.layer.cornerRadius = 12
         outputView.textContainerInset = UIEdgeInsets(top: 14, left: 10, bottom: 14, right: 10)
+        outputView.textContainer.lineFragmentPadding = 0
+        outputView.textContainer.lineBreakMode = .byCharWrapping
         outputView.translatesAutoresizingMaskIntoConstraints = false
         outputView.isSelectable = true
 
@@ -2008,7 +2010,8 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
 
         let font = outputView.font ?? .monospacedSystemFont(ofSize: 12, weight: .regular)
         let insets = outputView.textContainerInset
-        let usableWidth = max(0, outputView.bounds.width - insets.left - insets.right)
+        let linePadding = outputView.textContainer.lineFragmentPadding * 2
+        let usableWidth = max(0, outputView.bounds.width - insets.left - insets.right - linePadding)
         let usableHeight = max(0, outputView.bounds.height - insets.top - insets.bottom)
         let glyphWidth = max(6.0, "W".size(withAttributes: [.font: font]).width)
         let rowHeight = max(10.0, font.lineHeight)
@@ -2017,7 +2020,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         let rows = Int(floor(usableHeight / rowHeight))
         let screenScale = view.window?.screen.scale ?? UIScreen.main.scale
         let terminalSize = TerminalSize(
-            columns: max(40, min(60, columns)),
+            columns: max(48, min(72, columns)),
             rows: max(18, rows),
             pixelWidth: Int(outputView.bounds.width * screenScale),
             pixelHeight: Int(outputView.bounds.height * screenScale)
