@@ -1824,49 +1824,18 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
     }
 }
 
-final class RebootTerminalInputField: UIView, UIKeyInput {
-    var onInsertText: ((String) -> Void)?
-    var onDeleteBackward: (() -> Void)?
-
-    var keyboardType: UIKeyboardType = .asciiCapable
-    var returnKeyType: UIReturnKeyType = .default
-    var autocapitalizationType: UITextAutocapitalizationType = .none
-    var autocorrectionType: UITextAutocorrectionType = .no
-    var spellCheckingType: UITextSpellCheckingType = .no
-    var smartDashesType: UITextSmartDashesType = .no
-    var smartQuotesType: UITextSmartQuotesType = .no
-    var smartInsertDeleteType: UITextSmartInsertDeleteType = .no
-    var keyboardAppearance: UIKeyboardAppearance = .dark
-    var enablesReturnKeyAutomatically: Bool = false
-    var textContentType: UITextContentType! = .none
-
-    override var canBecomeFirstResponder: Bool { true }
-    var hasText: Bool { true }
-
-    func insertText(_ text: String) {
-        onInsertText?(text)
-    }
-
-    func deleteBackward() {
-        onDeleteBackward?()
-    }
-}
-
 @MainActor
-final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
+final class RebootTerminalViewController: UIViewController, UITextFieldDelegate, UITextViewDelegate {
     private let model: RebootAppModel
     private let titleLabel = UILabel()
     private let outputView = UITextView()
     private let shortcutsScrollView = UIScrollView()
     private let shortcutsRow = UIStackView()
-    private let keyboardInputField = RebootTerminalInputField()
+    private let keyboardInputField = UITextField()
     private var terminalObserverID: UUID?
     private var lastAppliedTerminalSize: TerminalSize?
     private var isFollowingTail = true
     private var isInteractingWithTerminalScroll = false
-    private var lastInsertedText: String = ""
-    private var lastInsertTimestamp: CFAbsoluteTime = 0
-    private var insertsSinceFocus = 0
 
     init(model: RebootAppModel) {
         self.model = model
@@ -1965,15 +1934,11 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         keyboardInputField.returnKeyType = .default
         keyboardInputField.textContentType = .none
         keyboardInputField.enablesReturnKeyAutomatically = false
+        keyboardInputField.tintColor = .clear
+        keyboardInputField.textColor = .clear
         keyboardInputField.backgroundColor = .clear
         keyboardInputField.translatesAutoresizingMaskIntoConstraints = false
-        keyboardInputField.onInsertText = { [weak self] text in
-            guard let self, !self.shouldSuppressGhostDuplicateInsert(text) else { return }
-            self.model.send(text)
-        }
-        keyboardInputField.onDeleteBackward = { [weak self] in
-            self?.model.send("\u{7F}")
-        }
+        keyboardInputField.delegate = self
 
         let focusTap = UITapGestureRecognizer(target: self, action: #selector(focusKeyboard))
         focusTap.cancelsTouchesInView = false
@@ -2058,9 +2023,6 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
 
     @objc
     private func focusKeyboard() {
-        insertsSinceFocus = 0
-        lastInsertedText = ""
-        lastInsertTimestamp = 0
         isFollowingTail = true
         keyboardInputField.becomeFirstResponder()
     }
@@ -2122,21 +2084,44 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         return scrollView.contentOffset.y >= (maxOffsetY - threshold)
     }
 
-    private func shouldSuppressGhostDuplicateInsert(_ text: String) -> Bool {
-        let now = CFAbsoluteTimeGetCurrent()
-        defer {
-            insertsSinceFocus += 1
-            lastInsertedText = text
-            lastInsertTimestamp = now
-        }
-
-        guard text.count == 1 else {
+    func textField(
+        _ textField: UITextField,
+        shouldChangeCharactersIn range: NSRange,
+        replacementString string: String
+    ) -> Bool {
+        let currentText = textField.text ?? ""
+        guard let textRange = Range(range, in: currentText) else {
             return false
         }
+        let updatedText = currentText.replacingCharacters(in: textRange, with: string)
 
-        return insertsSinceFocus == 1
-            && lastInsertedText == text
-            && (now - lastInsertTimestamp) < 0.08
+        // Apply terminal delta: delete replaced range, then insert replacement.
+        if range.length > 0 {
+            for _ in 0..<range.length {
+                model.send("\u{7F}")
+            }
+        }
+        if !string.isEmpty {
+            model.send(string)
+        }
+
+        // Keep hidden field composition state in sync with keyboard internals.
+        textField.text = updatedText
+        let end = textField.endOfDocument
+        textField.selectedTextRange = textField.textRange(from: end, to: end)
+
+        // Prevent hidden text accumulation.
+        if updatedText.count > 256 {
+            textField.text = ""
+        }
+
+        return false
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        model.send("\n")
+        textField.text = ""
+        return false
     }
 
     private func applyTerminalGeometryIfNeeded() {
