@@ -355,7 +355,9 @@ final class RebootVaultsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let host = hosts(for: sections[indexPath.section])[indexPath.row]
-        navigationController?.pushViewController(RebootHostDetailsViewController(model: model, hostID: host.id), animated: true)
+        let controller = RebootHostDetailsViewController(model: model, hostID: host.id)
+        controller.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(controller, animated: true)
     }
 
     private func hosts(for section: Section) -> [RebootHost] {
@@ -368,7 +370,9 @@ final class RebootVaultsViewController: UITableViewController {
 
     @objc
     private func addHost() {
-        navigationController?.pushViewController(RebootHostEditorViewController(model: model, existingHostID: nil), animated: true)
+        let controller = RebootHostEditorViewController(model: model, existingHostID: nil)
+        controller.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(controller, animated: true)
     }
 
     private func configureSearchAndScope() {
@@ -453,6 +457,7 @@ final class RebootHostDetailsViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         title = "Host"
+        navigationItem.largeTitleDisplayMode = .never
 
         summaryLabel.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
         summaryLabel.numberOfLines = 0
@@ -489,11 +494,21 @@ final class RebootHostDetailsViewController: UIViewController {
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(stack)
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+        scrollView.addSubview(stack)
+
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
+            scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -16),
+            stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -32)
         ])
 
         refresh()
@@ -543,7 +558,9 @@ final class RebootHostDetailsViewController: UIViewController {
             guard let self else { return }
             let password = alert?.textFields?.first?.text ?? ""
             self.model.connect(host: host, password: password)
-            self.navigationController?.pushViewController(RebootTerminalViewController(model: self.model), animated: true)
+            let terminal = RebootTerminalViewController(model: self.model)
+            terminal.hidesBottomBarWhenPushed = true
+            self.navigationController?.pushViewController(terminal, animated: true)
         })
         present(alert, animated: true)
     }
@@ -556,7 +573,9 @@ final class RebootHostDetailsViewController: UIViewController {
 
     @objc
     private func editHost() {
-        navigationController?.pushViewController(RebootHostEditorViewController(model: model, existingHostID: hostID), animated: true)
+        let controller = RebootHostEditorViewController(model: model, existingHostID: hostID)
+        controller.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(controller, animated: true)
     }
 
     @objc
@@ -594,6 +613,7 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         title = existingHostID == nil ? "New Host" : "Edit Host"
+        navigationItem.largeTitleDisplayMode = .never
 
         [vaultField, nameField, noteField, hostField, portField, userField].forEach {
             $0.borderStyle = .roundedRect
@@ -625,11 +645,21 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(stack)
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+        scrollView.addSubview(stack)
+
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
+            scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -16),
+            stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 16),
+            stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -16),
+            stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -32)
         ])
 
         if let existingHostID, let host = model.hostStore.host(id: existingHostID) {
@@ -841,7 +871,9 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
 
     @objc
     private func openTerminal() {
-        navigationController?.pushViewController(RebootTerminalViewController(model: model), animated: true)
+        let controller = RebootTerminalViewController(model: model)
+        controller.hidesBottomBarWhenPushed = true
+        navigationController?.pushViewController(controller, animated: true)
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
