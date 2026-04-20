@@ -1842,7 +1842,8 @@ final class RebootTerminalInputField: UIView, UIKeyInput {
     var textContentType: UITextContentType! = .none
 
     override var canBecomeFirstResponder: Bool { true }
-    var hasText: Bool { false }
+    // Keep backspace key enabled for proxy input view.
+    var hasText: Bool { true }
 
     func insertText(_ text: String) {
         onInsertText?(text)
@@ -1865,6 +1866,7 @@ final class RebootTerminalViewController: UIViewController {
     private var lastAppliedTerminalSize: TerminalSize?
     private var lastInsertedText: String = ""
     private var lastInsertTimestamp: CFAbsoluteTime = 0
+    private var insertsSinceFocus = 0
 
     init(model: RebootAppModel) {
         self.model = model
@@ -2038,6 +2040,9 @@ final class RebootTerminalViewController: UIViewController {
 
     @objc
     private func focusKeyboard() {
+        insertsSinceFocus = 0
+        lastInsertedText = ""
+        lastInsertTimestamp = 0
         keyboardInputField.becomeFirstResponder()
     }
 
@@ -2113,16 +2118,19 @@ final class RebootTerminalViewController: UIViewController {
     private func shouldSuppressGhostDuplicateInsert(_ text: String) -> Bool {
         let now = CFAbsoluteTimeGetCurrent()
         defer {
+            insertsSinceFocus += 1
             lastInsertedText = text
             lastInsertTimestamp = now
         }
 
-        guard text.count == 1, lastInsertedText == text else {
+        guard text.count == 1 else {
             return false
         }
 
-        // iOS sometimes emits a phantom duplicate first character on keyboard session start.
-        return (now - lastInsertTimestamp) < 0.03
+        // Suppress only a near-instant duplicate of the very first typed character after focus.
+        return insertsSinceFocus == 1
+            && lastInsertedText == text
+            && (now - lastInsertTimestamp) < 0.08
     }
 
     private func configureHeader() {
