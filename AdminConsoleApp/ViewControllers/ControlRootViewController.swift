@@ -208,7 +208,7 @@ final class RebootAppModel {
                 username: host.username,
                 password: resolvedPassword,
                 terminalType: "xterm-256color",
-                terminalSize: TerminalSize(columns: 120, rows: 34, pixelWidth: 1440, pixelHeight: 900)
+                terminalSize: TerminalSize(columns: 60, rows: 30, pixelWidth: 900, pixelHeight: 1200)
             )
 
             let didConnect = await runtime.connect(using: config)
@@ -286,6 +286,21 @@ final class RebootAppModel {
     func send(_ text: String) {
         Task {
             try? await runtime.send(text: text)
+        }
+    }
+
+    func resizeTerminal(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) {
+        let normalizedColumns = max(40, min(60, columns))
+        let normalizedRows = max(18, rows)
+        Task {
+            await runtime.resize(
+                to: TerminalSize(
+                    columns: normalizedColumns,
+                    rows: normalizedRows,
+                    pixelWidth: max(320, pixelWidth),
+                    pixelHeight: max(320, pixelHeight)
+                )
+            )
         }
     }
 
@@ -1819,6 +1834,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     private let shortcutsRow = UIStackView()
     private let keyboardInputField = UITextField()
     private var terminalObserverID: UUID?
+    private var lastAppliedTerminalSize: TerminalSize?
 
     init(model: RebootAppModel) {
         self.model = model
@@ -1962,6 +1978,12 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         focusKeyboard()
+        applyTerminalGeometryIfNeeded()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        applyTerminalGeometryIfNeeded()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -1986,6 +2008,40 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     @objc
     private func focusKeyboard() {
         keyboardInputField.becomeFirstResponder()
+    }
+
+    private func applyTerminalGeometryIfNeeded() {
+        guard outputView.bounds.width > 80, outputView.bounds.height > 120 else {
+            return
+        }
+
+        let font = outputView.font ?? .monospacedSystemFont(ofSize: 12, weight: .regular)
+        let insets = outputView.textContainerInset
+        let usableWidth = max(0, outputView.bounds.width - insets.left - insets.right)
+        let usableHeight = max(0, outputView.bounds.height - insets.top - insets.bottom)
+        let glyphWidth = max(6.0, "W".size(withAttributes: [.font: font]).width)
+        let rowHeight = max(10.0, font.lineHeight)
+
+        let columns = Int(floor(usableWidth / glyphWidth))
+        let rows = Int(floor(usableHeight / rowHeight))
+        let screenScale = view.window?.screen.scale ?? UIScreen.main.scale
+        let terminalSize = TerminalSize(
+            columns: max(40, min(60, columns)),
+            rows: max(18, rows),
+            pixelWidth: Int(outputView.bounds.width * screenScale),
+            pixelHeight: Int(outputView.bounds.height * screenScale)
+        )
+
+        guard terminalSize != lastAppliedTerminalSize else {
+            return
+        }
+        lastAppliedTerminalSize = terminalSize
+        model.resizeTerminal(
+            columns: terminalSize.columns,
+            rows: terminalSize.rows,
+            pixelWidth: terminalSize.pixelWidth,
+            pixelHeight: terminalSize.pixelHeight
+        )
     }
 
     func textField(
@@ -2058,8 +2114,11 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         closeButton.translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.text = "Terminal"
-        titleLabel.font = .systemFont(ofSize: 32, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
         titleLabel.textColor = .white
+        titleLabel.numberOfLines = 1
+        titleLabel.adjustsFontSizeToFitWidth = true
+        titleLabel.minimumScaleFactor = 0.75
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(closeButton)
@@ -2107,7 +2166,7 @@ final class RebootProfileViewController: UIViewController {
         label.text = """
         Termius Reboot
         Mobile-first mode.
-        External monitor mirroring will be added as Phase 2 after phone flow is stable.
+        External monitor mirroring is planned for Phase 3 after phone flow stabilization.
         Hosts in storage: \(model.hostStore.hosts.count)
         """
 

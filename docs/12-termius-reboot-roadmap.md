@@ -93,3 +93,7 @@ Acceptance:
   - Runtime marks and reports background suspension/resume in transcript/status.
   - Scene lifecycle is wired to reboot flow (`ControlSceneDelegate` -> `RebootRootViewController` -> `RebootAppModel`).
   - Automatic reconnect attempt on foreground for previously active host (using saved credentials when available).
+- Started Phase 2 terminal ergonomics hardening:
+  - Increased terminal transcript buffer limit for long-running sessions.
+  - Reduced terminal header visual weight (server address title) for better readability.
+  - Added adaptive terminal resize with mobile-first width cap to keep command output in a single readable column.

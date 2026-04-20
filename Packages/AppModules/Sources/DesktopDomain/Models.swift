@@ -442,7 +442,7 @@ public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
 }
 
 public struct TerminalSurfaceState: Codable, Equatable, Sendable {
-    public static let maximumTranscriptLength = 12_000
+    public static let maximumTranscriptLength = 48_000
 
     public var connectionTitle: String
     public var screenTitle: String?

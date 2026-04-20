@@ -107,10 +107,10 @@
 - Termius-like core layout/flows: в активной шлифовке.
 
 ### Phase 2 (Robustness & Realistic Behavior)
-Статус: начат частично.
+Статус: в активной реализации.
 - Better validation/errors: частично сделано.
-- Terminal ergonomics: начато (direct input, soft keys, render fidelity).
-- Lifecycle hardening: в работе.
+- Terminal ergonomics: начато (direct input, soft keys, render fidelity, larger buffer).
+- Lifecycle hardening: сделан первый рабочий срез (background/foreground + reconnect attempt).
 
 ### Phase 3 (External Monitor Mirroring)
 Статус: еще не начат в reboot track (осознанно, после mobile stability gate).
@@ -118,18 +118,17 @@
 ## 7) Recommended Next Execution Item
 
 Следующий приоритетный пункт roadmap:
-- **Phase 2: Session lifecycle improvements (foreground/background handling)**
+- **Phase 2: Terminal ergonomics expansion (selection/copy/history shortcuts)**
 
 Почему именно он:
-- Core SSH уже работает.
-- Основной пользовательский риск теперь в устойчивости long-running session во время app lifecycle transitions.
-- Этот шаг критичен перед возвратом к external monitor mirroring.
+- Lifecycle-блок уже выведен на рабочий уровень.
+- Следующий UX-риск в ежедневном использовании: удобство длинных интерактивных сессий.
+- Это снижает трение до включения external monitor mirroring.
 
 ## 8) Acceptance Criteria for Next Item
 
 Для закрытия следующего пункта нужно обеспечить:
-- При `sceneWillResignActive/DidEnterBackground` сессия не теряется мгновенно.
-- При `sceneDidBecomeActive` terminal state восстанавливается корректно.
-- Пользователь видит ясный статус при реальном разрыве (а не silent freeze).
-- Нет regression по direct keyboard input и command execution.
-
+- Выделение и копирование текста в терминале без скрытых состояний.
+- Стабильная история команд в рамках активной сессии.
+- Полезные keyboard shortcuts для часто используемых действий.
+- Нет regression по direct keyboard input, reconnect и command execution.
