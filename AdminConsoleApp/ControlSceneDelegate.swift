@@ -13,6 +13,9 @@ final class ControlSceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         let rootViewController = RebootRootTabBarController()
         let window = UIWindow(windowScene: windowScene)
+        window.frame = windowScene.coordinateSpace.bounds
+        window.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        window.backgroundColor = .systemBackground
         window.rootViewController = rootViewController
         window.makeKeyAndVisible()
         self.window = window

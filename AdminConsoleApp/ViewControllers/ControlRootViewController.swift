@@ -222,6 +222,7 @@ final class RebootRootTabBarController: UITabBarController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = .systemBackground
         configureAppearance()
 
         let vaults = UINavigationController(rootViewController: RebootVaultsViewController(model: model))
@@ -243,12 +244,7 @@ final class RebootRootTabBarController: UITabBarController {
         tabAppearance.backgroundColor = UIColor.secondarySystemBackground
         tabBar.standardAppearance = tabAppearance
         tabBar.scrollEdgeAppearance = tabAppearance
-
-        let navAppearance = UINavigationBarAppearance()
-        navAppearance.configureWithDefaultBackground()
-        navAppearance.largeTitleTextAttributes = [.font: UIFont.systemFont(ofSize: 34, weight: .bold)]
-        UINavigationBar.appearance().standardAppearance = navAppearance
-        UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+        tabBar.isTranslucent = false
     }
 }
 
@@ -276,7 +272,7 @@ final class RebootVaultsViewController: UITableViewController {
 
     private let model: RebootAppModel
     private var sections: [Section] = []
-    private let searchController = UISearchController(searchResultsController: nil)
+    private let searchField = UITextField()
     private let scopeControl = UISegmentedControl(items: ["All", "Favorites", "Recents"])
     private var searchText: String = ""
     private var selectedScope: FilterScope = .all
@@ -294,10 +290,17 @@ final class RebootVaultsViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Vaults"
-        navigationController?.navigationBar.prefersLargeTitles = true
-        navigationItem.largeTitleDisplayMode = .always
+        navigationController?.navigationBar.prefersLargeTitles = false
+        navigationItem.largeTitleDisplayMode = .never
+        let navAppearance = UINavigationBarAppearance()
+        navAppearance.configureWithOpaqueBackground()
+        navAppearance.backgroundColor = .systemBackground
+        navigationItem.standardAppearance = navAppearance
+        navigationItem.scrollEdgeAppearance = navAppearance
         view.backgroundColor = .systemBackground
         tableView.backgroundColor = .systemBackground
+        tableView.layer.cornerRadius = 0
+        tableView.clipsToBounds = true
         tableView.separatorStyle = .singleLine
         tableView.sectionHeaderTopPadding = 12
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addHost))
@@ -387,19 +390,29 @@ final class RebootVaultsViewController: UITableViewController {
     }
 
     private func configureSearchAndScope() {
-        searchController.searchBar.placeholder = "Search hosts"
-        searchController.obscuresBackgroundDuringPresentation = false
-        searchController.searchResultsUpdater = self
-        navigationItem.searchController = searchController
-        navigationItem.hidesSearchBarWhenScrolling = false
+        searchField.placeholder = "Search hosts"
+        searchField.borderStyle = .roundedRect
+        searchField.autocapitalizationType = .none
+        searchField.autocorrectionType = .no
+        searchField.clearButtonMode = .whileEditing
+        searchField.addTarget(self, action: #selector(searchTextChanged), for: .editingChanged)
 
         scopeControl.selectedSegmentIndex = 0
         scopeControl.addTarget(self, action: #selector(scopeChanged), for: .valueChanged)
-        let header = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 48))
-        scopeControl.frame = CGRect(x: 16, y: 8, width: header.bounds.width - 32, height: 32)
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 94))
+        searchField.frame = CGRect(x: 16, y: 8, width: header.bounds.width - 32, height: 38)
+        scopeControl.frame = CGRect(x: 16, y: 52, width: header.bounds.width - 32, height: 34)
+        searchField.autoresizingMask = [.flexibleWidth]
         scopeControl.autoresizingMask = [.flexibleWidth]
+        header.addSubview(searchField)
         header.addSubview(scopeControl)
         tableView.tableHeaderView = header
+    }
+
+    @objc
+    private func searchTextChanged() {
+        searchText = searchField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        reloadSections()
     }
 
     @objc
@@ -445,13 +458,6 @@ final class RebootVaultsViewController: UITableViewController {
         let bottomPadding = (tabBarController?.tabBar.bounds.height ?? 0) + 24
         tableView.contentInset.bottom = bottomPadding
         tableView.verticalScrollIndicatorInsets.bottom = bottomPadding
-    }
-}
-
-extension RebootVaultsViewController: UISearchResultsUpdating {
-    func updateSearchResults(for searchController: UISearchController) {
-        searchText = searchController.searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        reloadSections()
     }
 }
 
