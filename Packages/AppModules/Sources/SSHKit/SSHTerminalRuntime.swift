@@ -109,7 +109,7 @@ public actor SSHTerminalRuntime {
             state.columns = configuration.terminalSize.columns
             state.rows = configuration.terminalSize.rows
             await logConnectionEvent("SSH handshake completed. Shell channel is active.")
-            appendTerminalOutput("SSH session established.\n")
+            appendTerminalOutput(terminalLine("SSH session established."))
             await publishState()
             return true
         } catch {
@@ -118,8 +118,8 @@ public actor SSHTerminalRuntime {
             state.sessionState = .failed
             let userMessage = userFacingConnectionMessage(for: error)
             state.statusMessage = userMessage
-            appendTerminalOutput("Connection failed: \(userMessage)\n")
-            appendTerminalOutput("[debug] \(debugConnectionErrorDescription(error))\n")
+            appendTerminalOutput(terminalLine("Connection failed: \(userMessage)"))
+            appendTerminalOutput(terminalLine("[debug] \(debugConnectionErrorDescription(error))"))
             await publishState()
             return false
         }
@@ -129,7 +129,7 @@ public actor SSHTerminalRuntime {
         state.connectionTitle = connectionTitle
         state.sessionState = .failed
         state.statusMessage = message
-        appendTerminalOutput("Connection failed: \(message)\n")
+        appendTerminalOutput(terminalLine("Connection failed: \(message)"))
         await publishState()
     }
 
@@ -140,7 +140,7 @@ public actor SSHTerminalRuntime {
         if state.sessionState != .idle {
             state.sessionState = .idle
             state.statusMessage = "Disconnected"
-            appendTerminalOutput("SSH session disconnected.\n")
+            appendTerminalOutput(terminalLine("SSH session disconnected."))
             await publishState()
         }
     }
@@ -387,7 +387,8 @@ public actor SSHTerminalRuntime {
         } else {
             state.statusMessage = reason
         }
-        appendTerminalOutput("\nSession ended: \(reason)\n")
+        appendTerminalOutput(terminalLine(""))
+        appendTerminalOutput(terminalLine("Session ended: \(reason)"))
         await publishState()
         await tearDownTransport()
     }
@@ -478,8 +479,12 @@ public actor SSHTerminalRuntime {
     }
 
     private func logConnectionEvent(_ message: String) async {
-        appendTerminalOutput("[SSH] \(message)\n")
+        appendTerminalOutput(terminalLine("[SSH] \(message)"))
         await publishState()
+    }
+
+    private func terminalLine(_ text: String) -> String {
+        "\(text)\r\n"
     }
 
     private func userFacingConnectionMessage(for error: Error) -> String {
