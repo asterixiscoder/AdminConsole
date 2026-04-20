@@ -2000,11 +2000,26 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
     private func render(state: TerminalSurfaceState) {
         titleLabel.text = state.connectionTitle.isEmpty ? "Terminal" : state.connectionTitle
         let shouldScrollToBottom = isFollowingTail && !isInteractingWithTerminalScroll
-        let viewport = state.buffer.viewportText(insertingCursor: state.sessionState == .connected)
-        outputView.text = viewport.isEmpty ? state.statusMessage : viewport
+        let currentOffset = outputView.contentOffset
+        let transcript = state.transcript
+        let cursorSuffix = state.sessionState == .connected ? "\n█" : ""
+        let renderedText = transcript.isEmpty
+            ? state.statusMessage
+            : transcript + cursorSuffix
+        outputView.text = renderedText
         if shouldScrollToBottom {
             scrollOutputToBottom()
             isFollowingTail = true
+        } else if outputView.contentSize.height > 0 {
+            let maxOffsetY = max(
+                -outputView.adjustedContentInset.top,
+                outputView.contentSize.height - outputView.bounds.height + outputView.adjustedContentInset.bottom
+            )
+            let restoredOffset = CGPoint(
+                x: 0,
+                y: min(max(currentOffset.y, -outputView.adjustedContentInset.top), maxOffsetY)
+            )
+            outputView.setContentOffset(restoredOffset, animated: false)
         }
     }
 
