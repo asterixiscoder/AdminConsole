@@ -160,6 +160,7 @@ final class RebootAppModel {
         }
     }()
     private var terminalObservers: [UUID: (TerminalSurfaceState) -> Void] = [:]
+    private var backgroundReconnectHostID: UUID?
 
     init() {}
 
@@ -230,9 +231,55 @@ final class RebootAppModel {
         }
     }
 
+    func hasSavedPassword(for host: RebootHost) async -> Bool {
+        let identity = SSHCredentialIdentity(
+            host: host.hostname,
+            port: host.port,
+            username: host.username
+        )
+
+        do {
+            let saved = try await credentialStore.password(for: identity)
+            return !(saved?.isEmpty ?? true)
+        } catch {
+            return false
+        }
+    }
+
     func disconnect() {
         Task {
+            self.backgroundReconnectHostID = nil
             await runtime.disconnect()
+        }
+    }
+
+    func sceneDidEnterBackground() {
+        backgroundReconnectHostID = terminalState.sessionState == .connected ? selectedHostID : nil
+        Task {
+            await runtime.suspendForBackground()
+        }
+    }
+
+    func sceneWillEnterForeground() {
+        let reconnectHostID = backgroundReconnectHostID
+        backgroundReconnectHostID = nil
+
+        Task {
+            await runtime.resumeAfterForeground()
+
+            guard let reconnectHostID else {
+                return
+            }
+
+            let state = await runtime.snapshot()
+            guard state.sessionState != .connected,
+                  let host = hostStore.host(id: reconnectHostID) else {
+                return
+            }
+
+            await MainActor.run {
+                self.connect(host: host, password: "")
+            }
         }
     }
 
@@ -311,6 +358,14 @@ final class RebootRootViewController: UIViewController, RebootPhoneRouting {
         view.backgroundColor = .systemBackground
         configureLayout()
         switchToTab(.vaults, animated: false)
+    }
+
+    func sceneDidEnterBackground() {
+        model.sceneDidEnterBackground()
+    }
+
+    func sceneWillEnterForeground() {
+        model.sceneWillEnterForeground()
     }
 
     private func configureLayout() {
@@ -849,7 +904,15 @@ final class RebootHostDetailsViewController: UIViewController {
     @objc
     private func connectNow() {
         guard let host = model.hostStore.host(id: hostID) else { return }
-        presentPasswordPrompt(for: host)
+        Task { [weak self] in
+            guard let self else { return }
+            if await self.model.hasSavedPassword(for: host) {
+                self.model.connect(host: host, password: "")
+                self.router?.showTerminal()
+            } else {
+                self.presentPasswordPrompt(for: host)
+            }
+        }
     }
 
     @objc
@@ -1389,19 +1452,27 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     }
 
     private func promptPasswordAndConnect(host: RebootHost) {
-        view.endEditing(true)
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.presentedViewController == nil else { return }
-            let prompt = RebootPasswordPromptViewController(hostName: host.name) { [weak self] password in
-                guard let self else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            if await self.model.hasSavedPassword(for: host) {
                 self.passwordField.text = ""
-                self.model.connect(host: host, password: password)
+                self.model.connect(host: host, password: "")
                 self.openTerminalIfNeeded()
+            } else {
+                self.view.endEditing(true)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.presentedViewController == nil else { return }
+                    let prompt = RebootPasswordPromptViewController(hostName: host.name) { [weak self] password in
+                        guard let self else { return }
+                        self.passwordField.text = ""
+                        self.model.connect(host: host, password: password)
+                        self.openTerminalIfNeeded()
+                    }
+                    prompt.modalPresentationStyle = .overFullScreen
+                    prompt.modalTransitionStyle = .crossDissolve
+                    self.present(prompt, animated: true)
+                }
             }
-            prompt.modalPresentationStyle = .overFullScreen
-            prompt.modalTransitionStyle = .crossDissolve
-            self.present(prompt, animated: true)
         }
     }
 

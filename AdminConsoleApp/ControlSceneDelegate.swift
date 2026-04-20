@@ -18,4 +18,12 @@ final class ControlSceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.makeKeyAndVisible()
         self.window = window
     }
+
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        (window?.rootViewController as? RebootRootViewController)?.sceneDidEnterBackground()
+    }
+
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        (window?.rootViewController as? RebootRootViewController)?.sceneWillEnterForeground()
+    }
 }

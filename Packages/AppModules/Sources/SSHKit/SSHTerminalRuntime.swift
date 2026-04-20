@@ -52,6 +52,7 @@ public actor SSHTerminalRuntime {
     private var state: TerminalSurfaceState
     private var emulator: TerminalEmulator
     private var transport: Transport?
+    private var backgroundSuspendedAt: Date?
 
     public init(
         windowID: WindowID,
@@ -134,6 +135,7 @@ public actor SSHTerminalRuntime {
 
     public func disconnect() async {
         await tearDownTransport()
+        backgroundSuspendedAt = nil
 
         if state.sessionState != .idle {
             state.sessionState = .idle
@@ -188,6 +190,46 @@ public actor SSHTerminalRuntime {
     public func updateSelection(_ selection: TerminalSelection?) async {
         state.setSelection(selection)
         await publishState()
+    }
+
+    public func suspendForBackground() async {
+        guard state.sessionState == .connected else {
+            return
+        }
+
+        backgroundSuspendedAt = Date()
+        state.statusMessage = "App in background. Session will resume on foreground."
+        appendTerminalOutput("[SSH] App entered background. Monitoring session state.\n")
+        await publishState()
+    }
+
+    public func resumeAfterForeground() async {
+        guard backgroundSuspendedAt != nil else {
+            return
+        }
+        backgroundSuspendedAt = nil
+
+        guard state.sessionState == .connected else {
+            await publishState()
+            return
+        }
+
+        let hasActiveTransport =
+            (transport?.rootChannel.isActive ?? false)
+            && (transport?.shellChannel.isActive ?? false)
+
+        if hasActiveTransport {
+            state.statusMessage = "Connected"
+            appendTerminalOutput("[SSH] App entered foreground. Session remains active.\n")
+            await publishState()
+            return
+        }
+
+        state.sessionState = .failed
+        state.statusMessage = "Connection dropped while app was in background."
+        appendTerminalOutput("[SSH] Session dropped during background. Reconnect is required.\n")
+        await publishState()
+        await tearDownTransport()
     }
 
     public func selectedText() -> String? {
@@ -342,7 +384,11 @@ public actor SSHTerminalRuntime {
         }
 
         state.sessionState = .failed
-        state.statusMessage = reason
+        if backgroundSuspendedAt != nil {
+            state.statusMessage = "Connection dropped while app was in background."
+        } else {
+            state.statusMessage = reason
+        }
         appendTerminalOutput("\nSession ended: \(reason)\n")
         await publishState()
         await tearDownTransport()

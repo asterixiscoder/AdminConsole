@@ -89,3 +89,7 @@ Acceptance:
 - Added quick-connect behavior from favorites/recents in `Connections`.
 - Added host handoff (`Vault Host -> Connections`) with auto-prefill.
 - Reworked terminal state updates to multi-observer model (stable across screens).
+- Added SSH lifecycle handling for app background/foreground:
+  - Runtime marks and reports background suspension/resume in transcript/status.
+  - Scene lifecycle is wired to reboot flow (`ControlSceneDelegate` -> `RebootRootViewController` -> `RebootAppModel`).
+  - Automatic reconnect attempt on foreground for previously active host (using saved credentials when available).
