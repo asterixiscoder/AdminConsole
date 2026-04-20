@@ -1857,7 +1857,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         outputView.layer.cornerRadius = 12
         outputView.textContainerInset = UIEdgeInsets(top: 14, left: 10, bottom: 14, right: 10)
         outputView.textContainer.lineFragmentPadding = 0
-        outputView.textContainer.lineBreakMode = .byCharWrapping
+        outputView.textContainer.lineBreakMode = .byWordWrapping
         outputView.translatesAutoresizingMaskIntoConstraints = false
         outputView.isSelectable = true
 
@@ -1990,8 +1990,11 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
 
     private func render(state: TerminalSurfaceState) {
         titleLabel.text = state.connectionTitle.isEmpty ? "Terminal" : state.connectionTitle
-        let viewport = state.buffer.viewportText(insertingCursor: state.sessionState == .connected)
-        outputView.text = viewport.isEmpty ? state.statusMessage : viewport
+        var text = state.transcript
+        if state.sessionState == .connected {
+            text += "█"
+        }
+        outputView.text = text.isEmpty ? state.statusMessage : text
         let length = outputView.text.utf16.count
         if length > 0 {
             outputView.scrollRangeToVisible(NSRange(location: length - 1, length: 1))
