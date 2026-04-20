@@ -1825,17 +1825,30 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
 }
 
 @MainActor
-final class RebootTerminalInputField: UITextField {
+final class RebootTerminalInputField: UIView, UIKeyInput {
     var onInsertText: ((String) -> Void)?
     var onDeleteBackward: (() -> Void)?
 
-    override var hasText: Bool { false }
+    var keyboardType: UIKeyboardType = .asciiCapable
+    var returnKeyType: UIReturnKeyType = .default
+    var autocapitalizationType: UITextAutocapitalizationType = .none
+    var autocorrectionType: UITextAutocorrectionType = .no
+    var spellCheckingType: UITextSpellCheckingType = .no
+    var smartDashesType: UITextSmartDashesType = .no
+    var smartQuotesType: UITextSmartQuotesType = .no
+    var smartInsertDeleteType: UITextSmartInsertDeleteType = .no
+    var keyboardAppearance: UIKeyboardAppearance = .dark
+    var enablesReturnKeyAutomatically: Bool = false
+    var textContentType: UITextContentType! = .none
 
-    override func insertText(_ text: String) {
+    override var canBecomeFirstResponder: Bool { true }
+    var hasText: Bool { false }
+
+    func insertText(_ text: String) {
         onInsertText?(text)
     }
 
-    override func deleteBackward() {
+    func deleteBackward() {
         onDeleteBackward?()
     }
 }
@@ -1943,8 +1956,6 @@ final class RebootTerminalViewController: UIViewController {
         keyboardInputField.returnKeyType = .default
         keyboardInputField.textContentType = .none
         keyboardInputField.enablesReturnKeyAutomatically = false
-        keyboardInputField.tintColor = .clear
-        keyboardInputField.textColor = .clear
         keyboardInputField.backgroundColor = .clear
         keyboardInputField.translatesAutoresizingMaskIntoConstraints = false
         keyboardInputField.onInsertText = { [weak self] text in
