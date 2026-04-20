@@ -1,5 +1,6 @@
 import UIKit
 import DesktopDomain
+import SSHKit
 
 final class DesktopSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -19,16 +20,18 @@ final class DesktopSceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.makeKeyAndVisible()
         self.window = window
     }
+
+    func sceneDidDisconnect(_ scene: UIScene) {
+        AppEnvironment.rebootModel.clearExternalMirrorTerminalOverride()
+    }
 }
 
 @MainActor
 private final class RebootExternalMirrorViewController: UIViewController {
     private let model: RebootAppModel
-    private let titleLabel = UILabel()
-    private let statusLabel = UILabel()
     private let outputView = UITextView()
     private var terminalObserverID: UUID?
-    private var isFirstRender = true
+    private var lastAppliedTerminalSize: TerminalSize?
 
     init(model: RebootAppModel) {
         self.model = model
@@ -44,43 +47,23 @@ private final class RebootExternalMirrorViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
 
-        titleLabel.font = .systemFont(ofSize: 28, weight: .semibold)
-        titleLabel.textColor = UIColor(red: 0.86, green: 0.89, blue: 0.95, alpha: 1)
-        titleLabel.text = "Terminal Mirror"
-        titleLabel.numberOfLines = 1
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        statusLabel.font = .systemFont(ofSize: 16, weight: .medium)
-        statusLabel.textColor = UIColor(red: 0.55, green: 0.67, blue: 0.84, alpha: 1)
-        statusLabel.numberOfLines = 1
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-
         outputView.isEditable = false
         outputView.isSelectable = true
-        outputView.backgroundColor = UIColor(red: 0.03, green: 0.04, blue: 0.08, alpha: 1)
-        outputView.textColor = UIColor(red: 0.93, green: 0.96, blue: 1.0, alpha: 1)
-        outputView.font = .monospacedSystemFont(ofSize: 20, weight: .regular)
-        outputView.textContainerInset = UIEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+        outputView.backgroundColor = .black
+        outputView.textColor = UIColor(red: 0.97, green: 0.98, blue: 1.0, alpha: 1)
+        outputView.font = .monospacedSystemFont(ofSize: 15, weight: .regular)
+        outputView.textContainerInset = UIEdgeInsets(top: 8, left: 10, bottom: 8, right: 4)
         outputView.textContainer.lineFragmentPadding = 0
+        outputView.textContainer.lineBreakMode = .byCharWrapping
         outputView.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(titleLabel)
-        view.addSubview(statusLabel)
         view.addSubview(outputView)
 
         NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            titleLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
-
-            statusLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            statusLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
-            statusLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 6),
-
-            outputView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            outputView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            outputView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 14),
-            outputView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12)
+            outputView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            outputView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            outputView.topAnchor.constraint(equalTo: view.topAnchor),
+            outputView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
 
@@ -93,30 +76,73 @@ private final class RebootExternalMirrorViewController: UIViewController {
         }
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        applyTerminalGeometryIfNeeded()
+    }
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         if let terminalObserverID {
             model.removeTerminalObserver(id: terminalObserverID)
             self.terminalObserverID = nil
         }
+        model.clearExternalMirrorTerminalOverride()
     }
 
     private func render(_ state: TerminalSurfaceState) {
-        let title = state.connectionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        titleLabel.text = title.isEmpty ? "Terminal Mirror" : title
-        statusLabel.text = state.statusMessage
-
         outputView.text = state.transcript.isEmpty ? state.statusMessage : state.transcript
+        applyTerminalGeometryIfNeeded()
 
-        if isFirstRender {
-            outputView.setContentOffset(.zero, animated: false)
-            isFirstRender = false
-        } else {
-            let maxOffsetY = max(
-                -outputView.adjustedContentInset.top,
-                outputView.contentSize.height - outputView.bounds.height + outputView.adjustedContentInset.bottom
-            )
-            outputView.setContentOffset(CGPoint(x: 0, y: maxOffsetY), animated: false)
+        let maxOffsetY = max(
+            -outputView.adjustedContentInset.top,
+            outputView.contentSize.height - outputView.bounds.height + outputView.adjustedContentInset.bottom
+        )
+        outputView.setContentOffset(CGPoint(x: 0, y: maxOffsetY), animated: false)
+    }
+
+    private func applyTerminalGeometryIfNeeded() {
+        guard outputView.bounds.width > 200, outputView.bounds.height > 160 else {
+            return
         }
+
+        let font = outputView.font ?? .monospacedSystemFont(ofSize: 16, weight: .regular)
+        let insets = outputView.textContainerInset
+        let linePadding = outputView.textContainer.lineFragmentPadding * 2
+        let usableWidth = max(0, outputView.bounds.width - insets.left - insets.right - linePadding)
+        let usableHeight = max(0, outputView.bounds.height - insets.top - insets.bottom)
+        // Slightly bias toward wider usable cols: UIKit text metrics tend to
+        // overestimate mono glyph advance for terminal PTY sizing.
+        let glyphWidth = max(3.5, measuredMonospaceGlyphWidth(for: font) * 0.82)
+        let rowHeight = max(10.0, font.lineHeight)
+
+        let columns = Int(floor(usableWidth / glyphWidth)) + 1
+        let rows = Int(floor(usableHeight / rowHeight))
+        let screenScale = view.window?.screen.scale ?? UIScreen.main.scale
+        let terminalSize = TerminalSize(
+            columns: max(80, min(320, columns)),
+            rows: max(24, rows),
+            pixelWidth: Int(outputView.bounds.width * screenScale),
+            pixelHeight: Int(outputView.bounds.height * screenScale)
+        )
+
+        guard terminalSize != lastAppliedTerminalSize else {
+            return
+        }
+        lastAppliedTerminalSize = terminalSize
+        model.resizeTerminalFromExternalMirror(
+            columns: terminalSize.columns,
+            rows: terminalSize.rows,
+            pixelWidth: terminalSize.pixelWidth,
+            pixelHeight: terminalSize.pixelHeight
+        )
+    }
+
+    private func measuredMonospaceGlyphWidth(for font: UIFont) -> CGFloat {
+        let sampleCount = 64
+        let sample = String(repeating: "M", count: sampleCount)
+        let sampleWidth = (sample as NSString).size(withAttributes: [.font: font]).width
+        let perGlyph = sampleWidth / CGFloat(sampleCount)
+        return perGlyph.isFinite ? perGlyph : 8.0
     }
 }

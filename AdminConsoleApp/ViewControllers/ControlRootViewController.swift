@@ -221,6 +221,9 @@ final class RebootAppModel {
     private var terminalSessions: [UUID: TerminalSessionSlot] = [:]
     private var terminalSessionOrder: [UUID] = []
     private var terminalObservers: [UUID: (TerminalSurfaceState) -> Void] = [:]
+    private var controlTerminalSize: TerminalSize?
+    private var externalMirrorTerminalSize: TerminalSize?
+    private var appliedTerminalSizeBySession: [UUID: TerminalSize] = [:]
 
     init() {
         _ = createTerminalSession(makeActive: true)
@@ -440,21 +443,75 @@ final class RebootAppModel {
     }
 
     func resizeTerminal(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) {
-        let normalizedColumns = max(40, min(220, columns))
-        let normalizedRows = max(18, rows)
+        // Backward-compatible alias for phone surface updates.
+        resizeTerminalFromControlSurface(
+            columns: columns,
+            rows: rows,
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight
+        )
+    }
+
+    func resizeTerminalFromControlSurface(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) {
+        controlTerminalSize = TerminalSize(
+            columns: max(40, min(160, columns)),
+            rows: max(18, rows),
+            pixelWidth: max(320, pixelWidth),
+            pixelHeight: max(320, pixelHeight)
+        )
+        applyEffectiveTerminalResize()
+    }
+
+    func resizeTerminalFromExternalMirror(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) {
+        externalMirrorTerminalSize = TerminalSize(
+            columns: max(80, min(320, columns)),
+            rows: max(24, rows),
+            pixelWidth: max(320, pixelWidth),
+            pixelHeight: max(320, pixelHeight)
+        )
+        applyEffectiveTerminalResize()
+    }
+
+    func clearExternalMirrorTerminalOverride() {
+        externalMirrorTerminalSize = nil
+        applyEffectiveTerminalResize()
+    }
+
+    private func applyEffectiveTerminalResize() {
         guard let activeSessionID = activeTerminalSessionID,
               let slot = terminalSessions[activeSessionID] else {
             return
         }
+
+        guard let targetSize = resolvedTerminalSize else {
+            return
+        }
+        guard appliedTerminalSizeBySession[activeSessionID] != targetSize else {
+            return
+        }
+        appliedTerminalSizeBySession[activeSessionID] = targetSize
+
         Task {
-            await slot.runtime.resize(
-                to: TerminalSize(
-                    columns: normalizedColumns,
-                    rows: normalizedRows,
-                    pixelWidth: max(320, pixelWidth),
-                    pixelHeight: max(320, pixelHeight)
-                )
+            await slot.runtime.resize(to: targetSize)
+        }
+    }
+
+    private var resolvedTerminalSize: TerminalSize? {
+        switch (controlTerminalSize, externalMirrorTerminalSize) {
+        case let (control?, external?):
+            // External display should not be constrained by phone layout.
+            return TerminalSize(
+                columns: max(control.columns, external.columns),
+                rows: max(control.rows, external.rows),
+                pixelWidth: max(control.pixelWidth, external.pixelWidth),
+                pixelHeight: max(control.pixelHeight, external.pixelHeight)
             )
+        case let (control?, nil):
+            return control
+        case let (nil, external?):
+            return external
+        case (nil, nil):
+            return nil
         }
     }
 
@@ -494,6 +551,7 @@ final class RebootAppModel {
         for observer in terminalObservers.values {
             observer(terminalState)
         }
+        applyEffectiveTerminalResize()
     }
 }
 
@@ -2033,13 +2091,13 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         configureHeader()
 
         outputView.isEditable = false
-        outputView.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
+        outputView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         outputView.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.12, alpha: 1)
         outputView.textColor = UIColor(red: 0.90, green: 0.92, blue: 0.96, alpha: 1)
         outputView.layer.cornerRadius = 6
-        outputView.textContainerInset = UIEdgeInsets(top: 6, left: 2, bottom: 6, right: 2)
+        outputView.textContainerInset = UIEdgeInsets(top: 4, left: 1, bottom: 4, right: 1)
         outputView.textContainer.lineFragmentPadding = 0
-        outputView.textContainer.lineBreakMode = .byWordWrapping
+        outputView.textContainer.lineBreakMode = .byCharWrapping
         outputView.translatesAutoresizingMaskIntoConstraints = false
         outputView.isScrollEnabled = true
         outputView.alwaysBounceVertical = true
@@ -2520,10 +2578,12 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         let linePadding = outputView.textContainer.lineFragmentPadding * 2
         let usableWidth = max(0, outputView.bounds.width - insets.left - insets.right - linePadding)
         let usableHeight = max(0, outputView.bounds.height - insets.top - insets.bottom)
-        let glyphWidth = max(6.0, "W".size(withAttributes: [.font: font]).width)
+        // Slightly bias toward wider usable cols: UIKit text metrics tend to
+        // overestimate mono glyph advance for terminal PTY sizing.
+        let glyphWidth = max(3.5, measuredMonospaceGlyphWidth(for: font) * 0.82)
         let rowHeight = max(10.0, font.lineHeight)
 
-        let columns = Int(floor(usableWidth / glyphWidth))
+        let columns = Int(floor(usableWidth / glyphWidth)) + 1
         let rows = Int(floor(usableHeight / rowHeight))
         let screenScale = view.window?.screen.scale ?? UIScreen.main.scale
         let terminalSize = TerminalSize(
@@ -2537,12 +2597,20 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
             return
         }
         lastAppliedTerminalSize = terminalSize
-        model.resizeTerminal(
+        model.resizeTerminalFromControlSurface(
             columns: terminalSize.columns,
             rows: terminalSize.rows,
             pixelWidth: terminalSize.pixelWidth,
             pixelHeight: terminalSize.pixelHeight
         )
+    }
+
+    private func measuredMonospaceGlyphWidth(for font: UIFont) -> CGFloat {
+        let sampleCount = 64
+        let sample = String(repeating: "M", count: sampleCount)
+        let sampleWidth = (sample as NSString).size(withAttributes: [.font: font]).width
+        let perGlyph = sampleWidth / CGFloat(sampleCount)
+        return perGlyph.isFinite ? perGlyph : 6.0
     }
 
     private func makeSoftKeyButton(_ title: String) -> UIButton {
