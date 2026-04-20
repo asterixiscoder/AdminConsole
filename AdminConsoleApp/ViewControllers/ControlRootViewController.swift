@@ -8,6 +8,46 @@ private extension Notification.Name {
     static let rebootConnectHostRequested = Notification.Name("rebootConnectHostRequested")
 }
 
+final class RebootTerminalInputProxyView: UIView, UIKeyInput {
+    var onInsertText: ((String) -> Void)?
+    var onDeleteBackward: (() -> Void)?
+
+    override var canBecomeFirstResponder: Bool {
+        true
+    }
+
+    // Keep deletion key active for terminal semantics (delete should always emit DEL).
+    var hasText: Bool {
+        true
+    }
+
+    func insertText(_ text: String) {
+        guard !text.isEmpty else {
+            return
+        }
+        onInsertText?(text)
+    }
+
+    func deleteBackward() {
+        onDeleteBackward?()
+    }
+
+    var autocapitalizationType: UITextAutocapitalizationType = .none
+    var autocorrectionType: UITextAutocorrectionType = .no
+    var spellCheckingType: UITextSpellCheckingType = .no
+    var smartDashesType: UITextSmartDashesType = .no
+    var smartQuotesType: UITextSmartQuotesType = .no
+    var smartInsertDeleteType: UITextSmartInsertDeleteType = .no
+    var keyboardType: UIKeyboardType = .asciiCapable
+    var keyboardAppearance: UIKeyboardAppearance = .dark
+    var returnKeyType: UIReturnKeyType = .default
+    var enablesReturnKeyAutomatically: Bool = false
+    var textContentType: UITextContentType?
+
+    @available(iOS 17.0, *)
+    var inlinePredictionType: UITextInlinePredictionType = .no
+}
+
 struct RebootHost: Codable, Equatable, Identifiable {
     let id: UUID
     var vault: String
@@ -1825,13 +1865,17 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
 }
 
 @MainActor
-final class RebootTerminalViewController: UIViewController, UITextFieldDelegate, UITextViewDelegate {
+final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     private let model: RebootAppModel
     private let titleLabel = UILabel()
     private let outputView = UITextView()
+    private let sessionRow = UIStackView()
+    private let previousCommandButton = UIButton(type: .system)
+    private let activeSessionButton = UIButton(type: .system)
+    private let sessionActionsButton = UIButton(type: .system)
     private let shortcutsScrollView = UIScrollView()
     private let shortcutsRow = UIStackView()
-    private let keyboardInputField = UITextField()
+    private let keyboardInputField = RebootTerminalInputProxyView()
     private var terminalObserverID: UUID?
     private var lastAppliedTerminalSize: TerminalSize?
     private var isFollowingTail = true
@@ -1918,27 +1962,22 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
             shortcutsRow.heightAnchor.constraint(equalTo: shortcutsScrollView.frameLayoutGuide.heightAnchor, constant: -12)
         ])
 
-        let bottomStack = UIStackView(arrangedSubviews: [shortcutsScrollView])
+        configureSessionRow()
+
+        let bottomStack = UIStackView(arrangedSubviews: [sessionRow, shortcutsScrollView])
         bottomStack.axis = .vertical
-        bottomStack.spacing = 10
+        bottomStack.spacing = 8
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
 
-        keyboardInputField.autocorrectionType = .no
-        keyboardInputField.autocapitalizationType = .none
-        keyboardInputField.spellCheckingType = .no
-        keyboardInputField.smartDashesType = .no
-        keyboardInputField.smartQuotesType = .no
-        keyboardInputField.smartInsertDeleteType = .no
-        keyboardInputField.keyboardType = .asciiCapable
-        keyboardInputField.keyboardAppearance = .dark
-        keyboardInputField.returnKeyType = .default
-        keyboardInputField.textContentType = .none
-        keyboardInputField.enablesReturnKeyAutomatically = false
         keyboardInputField.tintColor = .clear
-        keyboardInputField.textColor = .clear
         keyboardInputField.backgroundColor = .clear
         keyboardInputField.translatesAutoresizingMaskIntoConstraints = false
-        keyboardInputField.delegate = self
+        keyboardInputField.onInsertText = { [weak self] text in
+            self?.handleTerminalInsertedText(text)
+        }
+        keyboardInputField.onDeleteBackward = { [weak self] in
+            self?.model.send("\u{7F}")
+        }
 
         let focusTap = UITapGestureRecognizer(target: self, action: #selector(focusKeyboard))
         focusTap.cancelsTouchesInView = false
@@ -1957,6 +1996,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
             bottomStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
             bottomStack.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -12),
 
+            sessionRow.heightAnchor.constraint(equalToConstant: 44),
             shortcutsScrollView.heightAnchor.constraint(equalToConstant: 44),
 
             keyboardInputField.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -1997,6 +2037,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
 
     private func render(state: TerminalSurfaceState) {
         titleLabel.text = state.connectionTitle.isEmpty ? "Terminal" : state.connectionTitle
+        applySessionStatus(state.sessionState)
         let shouldScrollToBottom = isFollowingTail && !isInteractingWithTerminalScroll
         let currentOffset = outputView.contentOffset
         let transcript = state.transcript
@@ -2084,44 +2125,100 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
         return scrollView.contentOffset.y >= (maxOffsetY - threshold)
     }
 
-    func textField(
-        _ textField: UITextField,
-        shouldChangeCharactersIn range: NSRange,
-        replacementString string: String
-    ) -> Bool {
-        let currentText = textField.text ?? ""
-        guard let textRange = Range(range, in: currentText) else {
-            return false
+    private func handleTerminalInsertedText(_ text: String) {
+        let normalized = text.replacingOccurrences(of: "\r", with: "\n")
+        guard !normalized.isEmpty else {
+            return
         }
-        let updatedText = currentText.replacingCharacters(in: textRange, with: string)
-
-        // Apply terminal delta: delete replaced range, then insert replacement.
-        if range.length > 0 {
-            for _ in 0..<range.length {
-                model.send("\u{7F}")
-            }
-        }
-        if !string.isEmpty {
-            model.send(string)
-        }
-
-        // Keep hidden field composition state in sync with keyboard internals.
-        textField.text = updatedText
-        let end = textField.endOfDocument
-        textField.selectedTextRange = textField.textRange(from: end, to: end)
-
-        // Prevent hidden text accumulation.
-        if updatedText.count > 256 {
-            textField.text = ""
-        }
-
-        return false
+        model.send(normalized)
     }
 
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        model.send("\n")
-        textField.text = ""
-        return false
+    private func configureSessionRow() {
+        sessionRow.axis = .horizontal
+        sessionRow.spacing = 8
+        sessionRow.distribution = .fill
+        sessionRow.alignment = .fill
+        sessionRow.translatesAutoresizingMaskIntoConstraints = false
+
+        styleSessionButton(previousCommandButton, title: "<")
+        previousCommandButton.addAction(UIAction { [weak self] _ in
+            // Termius-like quick access: recall previous command via shell history.
+            self?.model.send("\u{1B}[A")
+            self?.focusKeyboard()
+        }, for: .touchUpInside)
+
+        styleSessionButton(activeSessionButton, title: "idle")
+        activeSessionButton.addAction(UIAction { [weak self] _ in
+            self?.isFollowingTail = true
+            self?.scrollOutputToBottom()
+            self?.focusKeyboard()
+        }, for: .touchUpInside)
+
+        styleSessionButton(sessionActionsButton, title: "+")
+        sessionActionsButton.addAction(UIAction { [weak self] _ in
+            self?.presentSessionActions()
+        }, for: .touchUpInside)
+
+        sessionRow.addArrangedSubview(previousCommandButton)
+        sessionRow.addArrangedSubview(activeSessionButton)
+        sessionRow.addArrangedSubview(sessionActionsButton)
+
+        previousCommandButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        sessionActionsButton.widthAnchor.constraint(equalToConstant: 72).isActive = true
+    }
+
+    private func styleSessionButton(_ button: UIButton, title: String) {
+        button.configuration = .filled()
+        button.configuration?.title = title
+        button.configuration?.baseForegroundColor = UIColor(red: 0.92, green: 0.95, blue: 1.0, alpha: 1)
+        button.configuration?.baseBackgroundColor = UIColor(red: 0.22, green: 0.25, blue: 0.39, alpha: 1)
+        button.configuration?.cornerStyle = .large
+        button.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
+        button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+    }
+
+    private func applySessionStatus(_ sessionState: TerminalConnectionState) {
+        let title: String
+        switch sessionState {
+        case .idle:
+            title = "idle"
+        case .connecting:
+            title = "connecting"
+        case .connected:
+            title = "active"
+        case .failed:
+            title = "failed"
+        }
+        activeSessionButton.configuration?.title = title
+    }
+
+    private func presentSessionActions() {
+        let sheet = UIAlertController(title: "Session", message: nil, preferredStyle: .actionSheet)
+
+        if let clipboard = UIPasteboard.general.string, !clipboard.isEmpty {
+            sheet.addAction(UIAlertAction(title: "Paste Clipboard", style: .default, handler: { [weak self] _ in
+                self?.model.send(clipboard)
+                self?.focusKeyboard()
+            }))
+        }
+
+        sheet.addAction(UIAlertAction(title: "Send Ctrl+C", style: .default, handler: { [weak self] _ in
+            self?.model.send("\u{3}")
+            self?.focusKeyboard()
+        }))
+
+        sheet.addAction(UIAlertAction(title: "Clear Screen", style: .default, handler: { [weak self] _ in
+            self?.model.send("\u{C}")
+            self?.focusKeyboard()
+        }))
+
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = sessionActionsButton
+            popover.sourceRect = sessionActionsButton.bounds
+        }
+        present(sheet, animated: true)
     }
 
     private func applyTerminalGeometryIfNeeded() {

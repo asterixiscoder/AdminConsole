@@ -100,4 +100,26 @@ final class TerminalEmulatorTests: XCTestCase {
 
         XCTAssertEqual(emulator.currentScreenTitle(), "build host")
     }
+
+    func testTranscriptAppliesBackspaceToCurrentLine() {
+        var emulator = TerminalEmulator(columns: 12, rows: 2)
+
+        emulator.consume("nn")
+        emulator.consume("\u{0008}")
+        emulator.consume("m")
+
+        XCTAssertEqual(emulator.makeTranscript(), "nm")
+        XCTAssertEqual(emulator.makeBufferSnapshot().viewportLines[0], "nm")
+    }
+
+    func testTranscriptHandlesCarriageReturnRedrawWithoutDuplication() {
+        var emulator = TerminalEmulator(columns: 12, rows: 2)
+
+        emulator.consume("l")
+        emulator.consume("\r")
+        emulator.consume("ls")
+
+        XCTAssertEqual(emulator.makeTranscript(), "ls")
+        XCTAssertEqual(emulator.makeBufferSnapshot().viewportLines[0], "ls")
+    }
 }

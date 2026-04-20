@@ -97,3 +97,12 @@ Acceptance:
   - Increased terminal transcript buffer limit for long-running sessions.
   - Reduced terminal header visual weight (server address title) for better readability.
   - Added adaptive terminal resize with mobile-first width cap to keep command output in a single readable column.
+  - Replaced terminal keyboard ingestion path with `UIKeyInput` proxy model (stable `insertText/deleteBackward` semantics).
+  - Confirmed stable behavior on key scenarios:
+    - no first-character visual duplication,
+    - working backspace,
+    - single command execution on return.
+  - Added functional session control row over soft keys:
+    - `<` recalls previous command from shell history,
+    - center button reflects live session state (`idle/connecting/active/failed`) and refocuses terminal,
+    - `+` opens quick session actions (`Paste Clipboard`, `Send Ctrl+C`, `Clear Screen`).

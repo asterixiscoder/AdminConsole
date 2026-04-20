@@ -33,6 +33,15 @@
 - Команды отправляются напрямую с системной клавиатуры в SSH (без отдельного поля `Command/Send`).
 - Убрана визуальная аномалия повторного символа за счет рендера из `state.buffer` (VT100 state), а не сырого transcript.
 - Терминал продолжает корректно исполнять команды.
+- Дополнительно стабилизирован путь ввода:
+  - вместо делегатного `UITextField`-подхода внедрен `UIKeyInput` proxy view (first responder),
+  - символы уходят в SSH только через `insertText(_:)`,
+  - удаление всегда отправляет `DEL` через `deleteBackward()`,
+  - отключены автозамены/предикции (`UITextInputTraits`) для терминального контекста.
+- Практический эффект на устройстве:
+  - устранен повтор первой буквы,
+  - восстановлена работа `Backspace`,
+  - сохранен корректный быстрый ввод без пропусков.
 
 ### 2.5 Error Visibility / Diagnostics
 - Добавлен этапный SSH-лог в runtime transcript (`[SSH] ...`).
@@ -132,3 +141,23 @@
 - Стабильная история команд в рамках активной сессии.
 - Полезные keyboard shortcuts для часто используемых действий.
 - Нет regression по direct keyboard input, reconnect и command execution.
+
+## 9) Latest Delivered Fixes (2026-04-20, evening)
+
+Закрыт P0 дефект терминального ввода:
+- Симптомы: повтор первой буквы при наборе (`ls -> lls`), неработающий backspace, периодическая нестабильность после экранных/keyboard событий.
+- Причина: `UITextFieldDelegate`-pipeline в скрытом поле порождал составные изменения текста, не эквивалентные реальным key events терминала.
+- Исправление:
+  - ввод переведен на `UIKeyInput` proxy (`insertText`/`deleteBackward`) с единым каналом отправки в runtime,
+  - UI больше не опирается на внутреннее текстовое состояние скрытого поля,
+  - сохранена текущая VT100/scrollback модель рендера.
+- Валидация:
+  - `swift test --package-path Packages/AppModules` — PASS (46/46),
+  - `xcodebuild ... build` (iOS Simulator) — `BUILD SUCCEEDED`,
+  - `xcodebuild ... -only-testing:AdminConsoleTests test` — `TEST SUCCEEDED`.
+
+Старт следующего roadmap-пункта (Phase 2 ergonomics):
+- Добавлена рабочая session control row над soft keys:
+  - `<` — recall previous command (`ESC [ A`),
+  - `active/connecting/failed/idle` — live session status + jump/focus,
+  - `+` — session actions (`Paste Clipboard`, `Send Ctrl+C`, `Clear Screen`).

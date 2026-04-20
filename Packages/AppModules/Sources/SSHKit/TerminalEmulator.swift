@@ -38,9 +38,7 @@ struct TerminalEmulator {
         }
 
         let result = parser.consume(text, into: &screen)
-        if !result.transcript.isEmpty {
-            transcript = TerminalSurfaceState.trimmedTranscript(transcript + result.transcript)
-        }
+        transcript = TerminalSurfaceState.trimmedTranscript(screen.fullText())
         if let screenTitle = result.screenTitle {
             self.screenTitle = screenTitle
         }
@@ -60,9 +58,12 @@ struct TerminalEmulator {
 }
 
 struct TerminalScreenBuffer {
+    private static let maxScrollbackLines = 2_000
+
     private(set) var columns: Int
     private(set) var rows: Int
     private var lines: [[TerminalCell]]
+    private var scrollback: [[TerminalCell]]
     private(set) var cursorRow: Int
     private(set) var cursorColumn: Int
     private(set) var isCursorVisible = true
@@ -77,6 +78,7 @@ struct TerminalScreenBuffer {
             repeating: Array(repeating: TerminalCell(), count: max(1, columns)),
             count: max(1, rows)
         )
+        self.scrollback = []
         self.cursorRow = 0
         self.cursorColumn = 0
     }
@@ -366,10 +368,34 @@ struct TerminalScreenBuffer {
 
     private mutating func scrollUp(by count: Int) {
         for _ in 0..<count {
-            lines.removeFirst()
+            let scrolledLine = lines.removeFirst()
+            scrollback.append(scrolledLine)
+            if scrollback.count > Self.maxScrollbackLines {
+                scrollback.removeFirst(scrollback.count - Self.maxScrollbackLines)
+            }
             lines.append(Array(repeating: TerminalCell(style: activeStyle), count: columns))
             scrollbackLineCount += 1
         }
+    }
+
+    func fullText() -> String {
+        var renderedLines = (scrollback + lines).map { row in
+            renderLine(row)
+        }
+
+        while renderedLines.last?.isEmpty == true {
+            renderedLines.removeLast()
+        }
+
+        return renderedLines.joined(separator: "\n")
+    }
+
+    private func renderLine(_ row: [TerminalCell]) -> String {
+        var characters = row.map(\.character)
+        while let last = characters.last, last == " " {
+            characters.removeLast()
+        }
+        return characters.joined()
     }
 
     private func parseExtendedColor(from params: [Int]) -> (TerminalColor, Int)? {

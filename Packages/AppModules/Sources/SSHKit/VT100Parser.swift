@@ -67,6 +67,7 @@ struct VT100Parser {
             screen.carriageReturn()
         case 0x08, 0x7F:
             screen.backspace()
+            removeLastTranscriptCharacter(from: &transcript)
         case 0x09:
             screen.tab()
             transcript.append("\t")
@@ -118,6 +119,19 @@ struct VT100Parser {
         default:
             state = .ground
         }
+    }
+
+    private func removeLastTranscriptCharacter(from transcript: inout String) {
+        guard let lastIndex = transcript.indices.last else {
+            return
+        }
+
+        // Keep history line boundaries stable; backspace should not erase past a line break.
+        guard transcript[lastIndex] != "\n" else {
+            return
+        }
+
+        transcript.remove(at: lastIndex)
     }
 
     private mutating func handleCSI(
