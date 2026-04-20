@@ -2091,31 +2091,17 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
         shouldChangeCharactersIn range: NSRange,
         replacementString string: String
     ) -> Bool {
-        let currentText = textField.text ?? ""
-        guard let textRange = Range(range, in: currentText) else {
-            return false
-        }
-        let updatedText = currentText.replacingCharacters(in: textRange, with: string)
-
-        // Apply terminal delta: delete replaced range, then insert replacement.
-        if range.length > 0 {
-            for _ in 0..<range.length {
+        if string.isEmpty {
+            let deleteCount = max(1, range.length)
+            for _ in 0..<deleteCount {
                 model.send("\u{7F}")
             }
-        }
-        if !string.isEmpty {
+        } else {
             model.send(string)
         }
 
-        // Keep hidden field composition state in sync with keyboard internals.
-        textField.text = updatedText
-        let end = textField.endOfDocument
-        textField.selectedTextRange = textField.textRange(from: end, to: end)
-
-        // Prevent hidden text accumulation.
-        if updatedText.count > 256 {
-            textField.text = ""
-        }
+        // Keep the proxy field empty so iOS does not replay accumulated text.
+        textField.text = ""
 
         return false
     }
