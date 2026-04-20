@@ -188,24 +188,118 @@ final class RebootHostStore {
 }
 
 @MainActor
+struct RebootTerminalSessionSummary {
+    let id: UUID
+    let title: String
+    let sessionState: TerminalConnectionState
+    let isActive: Bool
+}
+
+@MainActor
 final class RebootAppModel {
     let hostStore = RebootHostStore()
     var selectedHostID: UUID?
     private let credentialStore = SSHCredentialStore()
 
-    private(set) var terminalState: TerminalSurfaceState = .idle()
-    private lazy var runtime: SSHTerminalRuntime = {
-        SSHTerminalRuntime(windowID: WindowID(), initialState: .idle()) { [weak self] state in
-            await self?.applyTerminalState(state)
-        }
-    }()
-    private var terminalObservers: [UUID: (TerminalSurfaceState) -> Void] = [:]
-    private var backgroundReconnectHostID: UUID?
+    private final class TerminalSessionSlot {
+        let id: UUID
+        var hostID: UUID?
+        let runtime: SSHTerminalRuntime
+        var state: TerminalSurfaceState
+        var backgroundReconnectHostID: UUID?
 
-    init() {}
+        init(id: UUID, runtime: SSHTerminalRuntime, state: TerminalSurfaceState) {
+            self.id = id
+            self.runtime = runtime
+            self.state = state
+            self.backgroundReconnectHostID = nil
+        }
+    }
+
+    private(set) var terminalState: TerminalSurfaceState = .idle()
+    private(set) var activeTerminalSessionID: UUID?
+    private var terminalSessions: [UUID: TerminalSessionSlot] = [:]
+    private var terminalSessionOrder: [UUID] = []
+    private var terminalObservers: [UUID: (TerminalSurfaceState) -> Void] = [:]
+
+    init() {
+        _ = createTerminalSession(makeActive: true)
+    }
+
+    @discardableResult
+    func createTerminalSession(makeActive: Bool = true) -> UUID {
+        let sessionID = UUID()
+        let runtime = SSHTerminalRuntime(windowID: WindowID(), initialState: .idle()) { [weak self] state in
+            await self?.applyTerminalState(state, for: sessionID)
+        }
+        let slot = TerminalSessionSlot(id: sessionID, runtime: runtime, state: .idle())
+        terminalSessions[sessionID] = slot
+        terminalSessionOrder.append(sessionID)
+
+        if makeActive {
+            activateSession(sessionID)
+        }
+
+        return sessionID
+    }
+
+    func switchToTerminalSession(_ id: UUID) {
+        activateSession(id)
+    }
+
+    func closeActiveTerminalSession() {
+        guard let activeSessionID = activeTerminalSessionID else {
+            return
+        }
+        guard terminalSessionOrder.count > 1 else {
+            return
+        }
+        guard let slot = terminalSessions.removeValue(forKey: activeSessionID) else {
+            return
+        }
+
+        terminalSessionOrder.removeAll(where: { $0 == activeSessionID })
+        Task {
+            await slot.runtime.disconnect()
+        }
+
+        let fallback = terminalSessionOrder.last ?? createTerminalSession(makeActive: false)
+        activateSession(fallback)
+    }
+
+    func terminalSessionSummaries() -> [RebootTerminalSessionSummary] {
+        terminalSessionOrder.enumerated().compactMap { index, sessionID in
+            guard let slot = terminalSessions[sessionID] else {
+                return nil
+            }
+            let hostTitle = slot.hostID.flatMap { hostStore.host(id: $0)?.name }
+            let stateTitle = slot.state.connectionTitle.isEmpty ? nil : slot.state.connectionTitle
+            let title = hostTitle ?? stateTitle ?? "session-\(index + 1)"
+
+            return RebootTerminalSessionSummary(
+                id: sessionID,
+                title: title,
+                sessionState: slot.state.sessionState,
+                isActive: sessionID == activeTerminalSessionID
+            )
+        }
+    }
 
     func connect(host: RebootHost, password: String) {
+        guard let sessionID = activeTerminalSessionID else {
+            return
+        }
+        connect(host: host, password: password, sessionID: sessionID)
+    }
+
+    private func connect(host: RebootHost, password: String, sessionID: UUID) {
         selectedHostID = host.id
+        guard let slot = terminalSessions[sessionID] else {
+            return
+        }
+        slot.hostID = host.id
+        let runtime = slot.runtime
+
         Task {
             let typedPassword = password.trimmingCharacters(in: .whitespacesAndNewlines)
             let identity = SSHCredentialIdentity(
@@ -287,53 +381,73 @@ final class RebootAppModel {
     }
 
     func disconnect() {
+        guard let activeSessionID = activeTerminalSessionID,
+              let slot = terminalSessions[activeSessionID] else {
+            return
+        }
         Task {
-            self.backgroundReconnectHostID = nil
-            await runtime.disconnect()
+            slot.backgroundReconnectHostID = nil
+            await slot.runtime.disconnect()
         }
     }
 
     func sceneDidEnterBackground() {
-        backgroundReconnectHostID = terminalState.sessionState == .connected ? selectedHostID : nil
+        let sessions = terminalSessionOrder.compactMap { terminalSessions[$0] }
+        for slot in sessions {
+            slot.backgroundReconnectHostID = slot.state.sessionState == .connected ? slot.hostID : nil
+        }
+
         Task {
-            await runtime.suspendForBackground()
+            for slot in sessions {
+                await slot.runtime.suspendForBackground()
+            }
         }
     }
 
     func sceneWillEnterForeground() {
-        let reconnectHostID = backgroundReconnectHostID
-        backgroundReconnectHostID = nil
+        let sessions = terminalSessionOrder.compactMap { terminalSessions[$0] }
 
         Task {
-            await runtime.resumeAfterForeground()
+            for slot in sessions {
+                await slot.runtime.resumeAfterForeground()
 
-            guard let reconnectHostID else {
-                return
-            }
+                guard let reconnectHostID = slot.backgroundReconnectHostID else {
+                    continue
+                }
+                slot.backgroundReconnectHostID = nil
 
-            let state = await runtime.snapshot()
-            guard state.sessionState != .connected,
-                  let host = hostStore.host(id: reconnectHostID) else {
-                return
-            }
+                let state = await slot.runtime.snapshot()
+                guard state.sessionState != .connected,
+                      let host = hostStore.host(id: reconnectHostID) else {
+                    continue
+                }
 
-            await MainActor.run {
-                self.connect(host: host, password: "")
+                await MainActor.run {
+                    self.connect(host: host, password: "", sessionID: slot.id)
+                }
             }
         }
     }
 
     func send(_ text: String) {
+        guard let activeSessionID = activeTerminalSessionID,
+              let slot = terminalSessions[activeSessionID] else {
+            return
+        }
         Task {
-            try? await runtime.send(text: text)
+            try? await slot.runtime.send(text: text)
         }
     }
 
     func resizeTerminal(columns: Int, rows: Int, pixelWidth: Int, pixelHeight: Int) {
         let normalizedColumns = max(40, min(220, columns))
         let normalizedRows = max(18, rows)
+        guard let activeSessionID = activeTerminalSessionID,
+              let slot = terminalSessions[activeSessionID] else {
+            return
+        }
         Task {
-            await runtime.resize(
+            await slot.runtime.resize(
                 to: TerminalSize(
                     columns: normalizedColumns,
                     rows: normalizedRows,
@@ -356,10 +470,29 @@ final class RebootAppModel {
         terminalObservers.removeValue(forKey: id)
     }
 
-    private func applyTerminalState(_ state: TerminalSurfaceState) {
+    private func applyTerminalState(_ state: TerminalSurfaceState, for sessionID: UUID) {
+        guard let slot = terminalSessions[sessionID] else {
+            return
+        }
+        slot.state = state
+        if sessionID != activeTerminalSessionID {
+            return
+        }
+
         terminalState = state
         for observer in terminalObservers.values {
             observer(state)
+        }
+    }
+
+    private func activateSession(_ sessionID: UUID) {
+        guard let slot = terminalSessions[sessionID] else {
+            return
+        }
+        activeTerminalSessionID = sessionID
+        terminalState = slot.state
+        for observer in terminalObservers.values {
+            observer(terminalState)
         }
     }
 }
@@ -2215,9 +2348,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
 
         styleSessionButton(activeSessionButton, title: "idle")
         activeSessionButton.addAction(UIAction { [weak self] _ in
-            self?.isFollowingTail = true
-            self?.scrollOutputToBottom()
-            self?.focusKeyboard()
+            self?.presentSessionSwitcher()
         }, for: .touchUpInside)
 
         styleSessionButton(sessionActionsButton, title: "+")
@@ -2244,22 +2375,72 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     }
 
     private func applySessionStatus(_ sessionState: TerminalConnectionState) {
-        let title: String
+        let stateTitle: String
         switch sessionState {
         case .idle:
-            title = "idle"
+            stateTitle = "idle"
         case .connecting:
-            title = "connecting"
+            stateTitle = "connecting"
         case .connected:
-            title = "active"
+            stateTitle = "active"
         case .failed:
-            title = "failed"
+            stateTitle = "failed"
         }
-        activeSessionButton.configuration?.title = title
+
+        let summaries = model.terminalSessionSummaries()
+        let activeSummary = summaries.first(where: \.isActive)
+        if let activeSummary {
+            let compact = compactSessionTitle(activeSummary.title)
+            activeSessionButton.configuration?.title = compact
+            activeSessionButton.configuration?.subtitle = stateTitle
+        } else {
+            activeSessionButton.configuration?.title = stateTitle
+            activeSessionButton.configuration?.subtitle = nil
+        }
+        sessionActionsButton.configuration?.title = summaries.count > 1 ? "+\(summaries.count)" : "+"
+    }
+
+    private func compactSessionTitle(_ rawTitle: String) -> String {
+        let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            return "session"
+        }
+        let maxLength = 16
+        if title.count <= maxLength {
+            return title
+        }
+        let head = title.prefix(12)
+        return "\(head)…"
     }
 
     private func presentSessionActions() {
         let sheet = UIAlertController(title: "Session", message: nil, preferredStyle: .actionSheet)
+        let summaries = model.terminalSessionSummaries()
+
+        sheet.addAction(UIAlertAction(title: "New Session", style: .default, handler: { [weak self] _ in
+            guard let self else { return }
+            _ = self.model.createTerminalSession(makeActive: true)
+            self.currentInputBuffer = ""
+            self.historyCursor = nil
+            self.isFollowingTail = true
+            self.scrollOutputToBottom()
+            self.focusKeyboard()
+        }))
+
+        if summaries.count > 1 {
+            sheet.addAction(UIAlertAction(title: "Switch Session", style: .default, handler: { [weak self] _ in
+                self?.presentSessionSwitcher()
+            }))
+            sheet.addAction(UIAlertAction(title: "Close Active Session", style: .destructive, handler: { [weak self] _ in
+                guard let self else { return }
+                self.model.closeActiveTerminalSession()
+                self.currentInputBuffer = ""
+                self.historyCursor = nil
+                self.isFollowingTail = true
+                self.scrollOutputToBottom()
+                self.focusKeyboard()
+            }))
+        }
 
         if let clipboard = UIPasteboard.general.string, !clipboard.isEmpty {
             sheet.addAction(UIAlertAction(title: "Paste Clipboard", style: .default, handler: { [weak self] _ in
@@ -2283,6 +2464,48 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         if let popover = sheet.popoverPresentationController {
             popover.sourceView = sessionActionsButton
             popover.sourceRect = sessionActionsButton.bounds
+        }
+        present(sheet, animated: true)
+    }
+
+    private func presentSessionSwitcher() {
+        let summaries = model.terminalSessionSummaries()
+        guard !summaries.isEmpty else {
+            return
+        }
+
+        let sheet = UIAlertController(title: "Sessions", message: nil, preferredStyle: .actionSheet)
+        for summary in summaries {
+            let stateLabel = summary.sessionState.rawValue
+            let marker = summary.isActive ? "• " : ""
+            let title = "\(marker)\(summary.title) (\(stateLabel))"
+            sheet.addAction(UIAlertAction(title: title, style: .default, handler: { [weak self] _ in
+                guard let self else { return }
+                self.model.switchToTerminalSession(summary.id)
+                self.currentInputBuffer = ""
+                self.historyCursor = nil
+                self.isFollowingTail = true
+                self.scrollOutputToBottom()
+                self.focusKeyboard()
+            }))
+        }
+
+        if summaries.count > 1 {
+            sheet.addAction(UIAlertAction(title: "Close Active Session", style: .destructive, handler: { [weak self] _ in
+                guard let self else { return }
+                self.model.closeActiveTerminalSession()
+                self.currentInputBuffer = ""
+                self.historyCursor = nil
+                self.isFollowingTail = true
+                self.scrollOutputToBottom()
+                self.focusKeyboard()
+            }))
+        }
+
+        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = activeSessionButton
+            popover.sourceRect = activeSessionButton.bounds
         }
         present(sheet, animated: true)
     }
