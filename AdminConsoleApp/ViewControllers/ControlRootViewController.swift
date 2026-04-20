@@ -283,7 +283,7 @@ final class RebootVaultsViewController: UITableViewController {
 
     init(model: RebootAppModel) {
         self.model = model
-        super.init(style: .insetGrouped)
+        super.init(style: .plain)
     }
 
     @available(*, unavailable)
@@ -295,6 +295,11 @@ final class RebootVaultsViewController: UITableViewController {
         super.viewDidLoad()
         title = "Vaults"
         navigationController?.navigationBar.prefersLargeTitles = true
+        navigationItem.largeTitleDisplayMode = .always
+        view.backgroundColor = .systemBackground
+        tableView.backgroundColor = .systemBackground
+        tableView.separatorStyle = .singleLine
+        tableView.sectionHeaderTopPadding = 12
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addHost))
         configureSearchAndScope()
         reloadSections()
@@ -302,7 +307,13 @@ final class RebootVaultsViewController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        updateBottomInsets()
         reloadSections()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateBottomInsets()
     }
 
     private func reloadSections() {
@@ -384,8 +395,11 @@ final class RebootVaultsViewController: UITableViewController {
 
         scopeControl.selectedSegmentIndex = 0
         scopeControl.addTarget(self, action: #selector(scopeChanged), for: .valueChanged)
-        tableView.tableHeaderView = scopeControl
-        scopeControl.frame = CGRect(x: 16, y: 8, width: tableView.bounds.width - 32, height: 32)
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 48))
+        scopeControl.frame = CGRect(x: 16, y: 8, width: header.bounds.width - 32, height: 32)
+        scopeControl.autoresizingMask = [.flexibleWidth]
+        header.addSubview(scopeControl)
+        tableView.tableHeaderView = header
     }
 
     @objc
@@ -426,6 +440,12 @@ final class RebootVaultsViewController: UITableViewController {
         formatter.unitsStyle = .short
         return formatter
     }()
+
+    private func updateBottomInsets() {
+        let bottomPadding = (tabBarController?.tabBar.bounds.height ?? 0) + 24
+        tableView.contentInset.bottom = bottomPadding
+        tableView.verticalScrollIndicatorInsets.bottom = bottomPadding
+    }
 }
 
 extension RebootVaultsViewController: UISearchResultsUpdating {
