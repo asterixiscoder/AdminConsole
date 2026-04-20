@@ -1863,6 +1863,8 @@ final class RebootTerminalViewController: UIViewController {
     private let keyboardInputField = RebootTerminalInputField()
     private var terminalObserverID: UUID?
     private var lastAppliedTerminalSize: TerminalSize?
+    private var lastInsertedText: String = ""
+    private var lastInsertTimestamp: CFAbsoluteTime = 0
 
     init(model: RebootAppModel) {
         self.model = model
@@ -1959,7 +1961,8 @@ final class RebootTerminalViewController: UIViewController {
         keyboardInputField.backgroundColor = .clear
         keyboardInputField.translatesAutoresizingMaskIntoConstraints = false
         keyboardInputField.onInsertText = { [weak self] text in
-            self?.model.send(text)
+            guard let self, !self.shouldSuppressGhostDuplicateInsert(text) else { return }
+            self.model.send(text)
         }
         keyboardInputField.onDeleteBackward = { [weak self] in
             self?.model.send("\u{7F}")
@@ -2105,6 +2108,21 @@ final class RebootTerminalViewController: UIViewController {
             return
         }
         model.send(text)
+    }
+
+    private func shouldSuppressGhostDuplicateInsert(_ text: String) -> Bool {
+        let now = CFAbsoluteTimeGetCurrent()
+        defer {
+            lastInsertedText = text
+            lastInsertTimestamp = now
+        }
+
+        guard text.count == 1, lastInsertedText == text else {
+            return false
+        }
+
+        // iOS sometimes emits a phantom duplicate first character on keyboard session start.
+        return (now - lastInsertTimestamp) < 0.03
     }
 
     private func configureHeader() {
