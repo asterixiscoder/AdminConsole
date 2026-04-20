@@ -222,6 +222,7 @@ final class RebootRootTabBarController: UITabBarController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        configureAppearance()
 
         let vaults = UINavigationController(rootViewController: RebootVaultsViewController(model: model))
         vaults.tabBarItem = UITabBarItem(title: "Vaults", image: UIImage(systemName: "shippingbox.fill"), selectedImage: UIImage(systemName: "shippingbox.fill"))
@@ -235,10 +236,30 @@ final class RebootRootTabBarController: UITabBarController {
         setViewControllers([vaults, connections, profile], animated: false)
         selectedIndex = 0
     }
+
+    private func configureAppearance() {
+        let tabAppearance = UITabBarAppearance()
+        tabAppearance.configureWithOpaqueBackground()
+        tabAppearance.backgroundColor = UIColor.secondarySystemBackground
+        tabBar.standardAppearance = tabAppearance
+        tabBar.scrollEdgeAppearance = tabAppearance
+
+        let navAppearance = UINavigationBarAppearance()
+        navAppearance.configureWithDefaultBackground()
+        navAppearance.largeTitleTextAttributes = [.font: UIFont.systemFont(ofSize: 34, weight: .bold)]
+        UINavigationBar.appearance().standardAppearance = navAppearance
+        UINavigationBar.appearance().scrollEdgeAppearance = navAppearance
+    }
 }
 
 @MainActor
 final class RebootVaultsViewController: UITableViewController {
+    private enum FilterScope: Int {
+        case all
+        case favorites
+        case recents
+    }
+
     private enum Section {
         case favorites
         case recents
@@ -255,6 +276,10 @@ final class RebootVaultsViewController: UITableViewController {
 
     private let model: RebootAppModel
     private var sections: [Section] = []
+    private let searchController = UISearchController(searchResultsController: nil)
+    private let scopeControl = UISegmentedControl(items: ["All", "Favorites", "Recents"])
+    private var searchText: String = ""
+    private var selectedScope: FilterScope = .all
 
     init(model: RebootAppModel) {
         self.model = model
@@ -269,7 +294,9 @@ final class RebootVaultsViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Vaults"
+        navigationController?.navigationBar.prefersLargeTitles = true
         navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addHost))
+        configureSearchAndScope()
         reloadSections()
     }
 
@@ -279,10 +306,25 @@ final class RebootVaultsViewController: UITableViewController {
     }
 
     private func reloadSections() {
+        let hasScopedHosts = !filteredAllHosts().isEmpty
         sections = []
-        if !model.hostStore.favorites().isEmpty { sections.append(.favorites) }
-        if !model.hostStore.recentHosts().isEmpty { sections.append(.recents) }
-        sections.append(contentsOf: model.hostStore.groupedVaultNames().map { .vault($0) })
+        switch selectedScope {
+        case .favorites:
+            if !filteredFavorites().isEmpty { sections.append(.favorites) }
+        case .recents:
+            if !filteredRecents().isEmpty { sections.append(.recents) }
+        case .all:
+            if !filteredFavorites().isEmpty { sections.append(.favorites) }
+            if !filteredRecents().isEmpty { sections.append(.recents) }
+            let vaults = model.hostStore.groupedVaultNames().filter { vault in
+                !filteredHosts(inVault: vault).isEmpty
+            }
+            sections.append(contentsOf: vaults.map { .vault($0) })
+        }
+
+        if !hasScopedHosts {
+            sections = []
+        }
         tableView.reloadData()
     }
 
@@ -299,8 +341,13 @@ final class RebootVaultsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         let host = hosts(for: sections[indexPath.section])[indexPath.row]
-        cell.textLabel?.text = host.isFavorite ? "★ \(host.name)" : host.name
-        cell.detailTextLabel?.text = "\(host.username)@\(host.hostname):\(host.port) • \(host.note)"
+        cell.textLabel?.text = host.name
+        cell.textLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        cell.imageView?.image = UIImage(systemName: host.isFavorite ? "star.fill" : "server.rack")
+        cell.imageView?.tintColor = host.isFavorite ? .systemYellow : .systemBlue
+        let lastConnected = host.lastConnectedAt.map { Self.relativeFormatter.localizedString(for: $0, relativeTo: Date()) } ?? "never"
+        cell.detailTextLabel?.text = "\(host.username)@\(host.hostname):\(host.port) • last: \(lastConnected)"
+        cell.detailTextLabel?.textColor = .secondaryLabel
         cell.accessoryType = .disclosureIndicator
         return cell
     }
@@ -313,15 +360,74 @@ final class RebootVaultsViewController: UITableViewController {
 
     private func hosts(for section: Section) -> [RebootHost] {
         switch section {
-        case .favorites: return model.hostStore.favorites()
-        case .recents: return model.hostStore.recentHosts()
-        case .vault(let name): return model.hostStore.hosts(inVault: name)
+        case .favorites: return filteredFavorites()
+        case .recents: return filteredRecents()
+        case .vault(let name): return filteredHosts(inVault: name)
         }
     }
 
     @objc
     private func addHost() {
         navigationController?.pushViewController(RebootHostEditorViewController(model: model, existingHostID: nil), animated: true)
+    }
+
+    private func configureSearchAndScope() {
+        searchController.searchBar.placeholder = "Search hosts"
+        searchController.obscuresBackgroundDuringPresentation = false
+        searchController.searchResultsUpdater = self
+        navigationItem.searchController = searchController
+        navigationItem.hidesSearchBarWhenScrolling = false
+
+        scopeControl.selectedSegmentIndex = 0
+        scopeControl.addTarget(self, action: #selector(scopeChanged), for: .valueChanged)
+        tableView.tableHeaderView = scopeControl
+        scopeControl.frame = CGRect(x: 16, y: 8, width: tableView.bounds.width - 32, height: 32)
+    }
+
+    @objc
+    private func scopeChanged() {
+        selectedScope = FilterScope(rawValue: scopeControl.selectedSegmentIndex) ?? .all
+        reloadSections()
+    }
+
+    private func filteredAllHosts() -> [RebootHost] {
+        let all = model.hostStore.hosts.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        guard !searchText.isEmpty else { return all }
+        return all.filter(matchesSearch(_:))
+    }
+
+    private func filteredFavorites() -> [RebootHost] {
+        model.hostStore.favorites().filter(matchesSearch(_:))
+    }
+
+    private func filteredRecents() -> [RebootHost] {
+        model.hostStore.recentHosts().filter(matchesSearch(_:))
+    }
+
+    private func filteredHosts(inVault vault: String) -> [RebootHost] {
+        model.hostStore.hosts(inVault: vault).filter(matchesSearch(_:))
+    }
+
+    private func matchesSearch(_ host: RebootHost) -> Bool {
+        if searchText.isEmpty { return true }
+        let needle = searchText.lowercased()
+        return host.name.lowercased().contains(needle)
+            || host.hostname.lowercased().contains(needle)
+            || host.username.lowercased().contains(needle)
+            || host.vault.lowercased().contains(needle)
+    }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+}
+
+extension RebootVaultsViewController: UISearchResultsUpdating {
+    func updateSearchResults(for searchController: UISearchController) {
+        searchText = searchController.searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        reloadSections()
     }
 }
 
@@ -587,14 +693,22 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
 final class RebootConnectionsViewController: UIViewController, UITextFieldDelegate {
     private let model: RebootAppModel
 
-    private let quickHostsCard = UIView()
-    private let quickHostsStack = UIStackView()
+    private let connectBar = UIView()
     private let hostField = UITextField()
     private let portField = UITextField()
     private let userField = UITextField()
     private let passwordField = UITextField()
+    private let connectButton = UIButton(type: .system)
+
+    private let quickHostsCard = UIView()
+    private let quickHostsStack = UIStackView()
+    private let sessionCard = UIView()
+    private let sessionHostLabel = UILabel()
+    private let sessionStateLabel = UILabel()
+    private let sessionPreviewView = UITextView()
     private let statusLabel = UILabel()
     private var terminalObserverID: UUID?
+    private var didAutoOpenTerminal = false
 
     init(model: RebootAppModel) {
         self.model = model
@@ -609,30 +723,12 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Connections"
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = UIColor(red: 0.95, green: 0.96, blue: 0.97, alpha: 1)
 
-        quickHostsCard.backgroundColor = .secondarySystemBackground
-        quickHostsCard.layer.cornerRadius = 12
-        quickHostsCard.translatesAutoresizingMaskIntoConstraints = false
-
-        let quickTitle = UILabel()
-        quickTitle.text = "Quick Connect"
-        quickTitle.font = .preferredFont(forTextStyle: .headline)
-
-        quickHostsStack.axis = .vertical
-        quickHostsStack.spacing = 8
-
-        let quickCardStack = UIStackView(arrangedSubviews: [quickTitle, quickHostsStack])
-        quickCardStack.axis = .vertical
-        quickCardStack.spacing = 10
-        quickCardStack.translatesAutoresizingMaskIntoConstraints = false
-        quickHostsCard.addSubview(quickCardStack)
-        NSLayoutConstraint.activate([
-            quickCardStack.leadingAnchor.constraint(equalTo: quickHostsCard.leadingAnchor, constant: 12),
-            quickCardStack.trailingAnchor.constraint(equalTo: quickHostsCard.trailingAnchor, constant: -12),
-            quickCardStack.topAnchor.constraint(equalTo: quickHostsCard.topAnchor, constant: 12),
-            quickCardStack.bottomAnchor.constraint(equalTo: quickHostsCard.bottomAnchor, constant: -12)
-        ])
+        configureConnectBar()
+        configureQuickHostsCard()
+        configureSessionCard()
+        configureStatusLabel()
 
         [hostField, portField, userField, passwordField].forEach {
             $0.borderStyle = .roundedRect
@@ -649,16 +745,6 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         passwordField.placeholder = "Password"
         passwordField.isSecureTextEntry = true
 
-        statusLabel.numberOfLines = 0
-        statusLabel.font = .preferredFont(forTextStyle: .footnote)
-        statusLabel.textColor = .secondaryLabel
-        statusLabel.text = "Ready"
-
-        let connect = UIButton(type: .system)
-        connect.configuration = .filled()
-        connect.configuration?.title = "Connect SSH"
-        connect.addTarget(self, action: #selector(connectSSH), for: .touchUpInside)
-
         let disconnect = UIButton(type: .system)
         disconnect.configuration = .tinted()
         disconnect.configuration?.title = "Disconnect"
@@ -669,7 +755,17 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         terminal.configuration?.title = "Open Terminal"
         terminal.addTarget(self, action: #selector(openTerminal), for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [quickHostsCard, hostField, portField, userField, passwordField, connect, disconnect, terminal, statusLabel])
+        let credentialsRow = UIStackView(arrangedSubviews: [userField, portField])
+        credentialsRow.axis = .horizontal
+        credentialsRow.spacing = 10
+        credentialsRow.distribution = .fillEqually
+
+        let controls = UIStackView(arrangedSubviews: [disconnect, terminal])
+        controls.axis = .horizontal
+        controls.spacing = 8
+        controls.distribution = .fillEqually
+
+        let stack = UIStackView(arrangedSubviews: [connectBar, credentialsRow, passwordField, sessionCard, quickHostsCard, controls, statusLabel])
         stack.axis = .vertical
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -693,10 +789,11 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        didAutoOpenTerminal = false
         reloadQuickHosts()
         if terminalObserverID == nil {
             terminalObserverID = model.addTerminalObserver { [weak self] state in
-                self?.statusLabel.text = "\(state.connectionTitle) • \(state.sessionState.rawValue.capitalized) • \(state.statusMessage)"
+                self?.render(state)
             }
         }
     }
@@ -721,24 +818,20 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         let port = Int((portField.text ?? "22").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 22
         guard !host.isEmpty, !user.isEmpty else { return }
 
+        let targetHost: RebootHost
         if let selectedHost = model.hostStore.host(id: model.selectedHostID ?? UUID()),
            selectedHost.hostname == host,
            selectedHost.username == user,
            selectedHost.port == port {
-            model.connect(host: selectedHost, password: password)
-            return
-        }
-
-        let saved = model.hostStore.hosts.first { candidate in
-            candidate.hostname == host && candidate.username == user && candidate.port == port
-        }
-
-        if let saved {
-            model.connect(host: saved, password: password)
+            targetHost = selectedHost
         } else {
-            let transient = RebootHost(vault: "Manual", name: host, note: "Manual session", hostname: host, port: port, username: user)
-            model.connect(host: transient, password: password)
+            let saved = model.hostStore.hosts.first { candidate in
+                candidate.hostname == host && candidate.username == user && candidate.port == port
+            }
+            targetHost = saved ?? RebootHost(vault: "Manual", name: host, note: "Manual session", hostname: host, port: port, username: user)
         }
+        model.connect(host: targetHost, password: password)
+        openTerminalIfNeeded()
     }
 
     @objc
@@ -809,6 +902,7 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
             let password = alert?.textFields?.first?.text ?? ""
             self.passwordField.text = ""
             self.model.connect(host: host, password: password)
+            self.openTerminalIfNeeded()
         })
         present(alert, animated: true)
     }
@@ -819,12 +913,132 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         guard let host = model.hostStore.host(id: hostID) else { return }
         prefill(host)
     }
+
+    private func configureConnectBar() {
+        connectBar.backgroundColor = .white
+        connectBar.layer.cornerRadius = 12
+        connectBar.translatesAutoresizingMaskIntoConstraints = false
+
+        hostField.placeholder = "Search or \"ssh user@hostname -p port\""
+        hostField.borderStyle = .none
+
+        connectButton.configuration = .plain()
+        connectButton.configuration?.title = "CONNECT"
+        connectButton.configuration?.baseForegroundColor = .systemBlue
+        connectButton.addTarget(self, action: #selector(connectSSH), for: .touchUpInside)
+
+        let line = UIView()
+        line.backgroundColor = UIColor.systemGray4
+        line.translatesAutoresizingMaskIntoConstraints = false
+        line.widthAnchor.constraint(equalToConstant: 1).isActive = true
+
+        let bar = UIStackView(arrangedSubviews: [hostField, line, connectButton])
+        bar.axis = .horizontal
+        bar.spacing = 10
+        bar.alignment = .center
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        connectBar.addSubview(bar)
+        NSLayoutConstraint.activate([
+            bar.leadingAnchor.constraint(equalTo: connectBar.leadingAnchor, constant: 14),
+            bar.trailingAnchor.constraint(equalTo: connectBar.trailingAnchor, constant: -8),
+            bar.topAnchor.constraint(equalTo: connectBar.topAnchor, constant: 10),
+            bar.bottomAnchor.constraint(equalTo: connectBar.bottomAnchor, constant: -10),
+            connectBar.heightAnchor.constraint(equalToConstant: 48)
+        ])
+    }
+
+    private func configureQuickHostsCard() {
+        quickHostsCard.backgroundColor = .white
+        quickHostsCard.layer.cornerRadius = 14
+        quickHostsCard.translatesAutoresizingMaskIntoConstraints = false
+
+        let quickTitle = UILabel()
+        quickTitle.text = "Quick Connect"
+        quickTitle.font = .preferredFont(forTextStyle: .headline)
+
+        quickHostsStack.axis = .vertical
+        quickHostsStack.spacing = 8
+
+        let quickCardStack = UIStackView(arrangedSubviews: [quickTitle, quickHostsStack])
+        quickCardStack.axis = .vertical
+        quickCardStack.spacing = 10
+        quickCardStack.translatesAutoresizingMaskIntoConstraints = false
+        quickHostsCard.addSubview(quickCardStack)
+        NSLayoutConstraint.activate([
+            quickCardStack.leadingAnchor.constraint(equalTo: quickHostsCard.leadingAnchor, constant: 12),
+            quickCardStack.trailingAnchor.constraint(equalTo: quickHostsCard.trailingAnchor, constant: -12),
+            quickCardStack.topAnchor.constraint(equalTo: quickHostsCard.topAnchor, constant: 12),
+            quickCardStack.bottomAnchor.constraint(equalTo: quickHostsCard.bottomAnchor, constant: -12)
+        ])
+    }
+
+    private func configureSessionCard() {
+        sessionCard.backgroundColor = UIColor(red: 0.10, green: 0.11, blue: 0.19, alpha: 1)
+        sessionCard.layer.cornerRadius = 14
+        sessionCard.translatesAutoresizingMaskIntoConstraints = false
+
+        sessionHostLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        sessionHostLabel.textColor = .white
+        sessionHostLabel.text = "No Active Session"
+
+        sessionStateLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        sessionStateLabel.textColor = UIColor(red: 0.45, green: 0.82, blue: 0.52, alpha: 1)
+        sessionStateLabel.text = "Idle"
+
+        sessionPreviewView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        sessionPreviewView.textColor = UIColor(red: 0.39, green: 0.85, blue: 0.96, alpha: 1)
+        sessionPreviewView.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.14, alpha: 1)
+        sessionPreviewView.layer.cornerRadius = 10
+        sessionPreviewView.isEditable = false
+        sessionPreviewView.text = "Terminal output will appear here."
+        sessionPreviewView.textContainerInset = UIEdgeInsets(top: 10, left: 8, bottom: 10, right: 8)
+
+        let labels = UIStackView(arrangedSubviews: [sessionHostLabel, sessionStateLabel])
+        labels.axis = .vertical
+        labels.spacing = 4
+
+        let stack = UIStackView(arrangedSubviews: [labels, sessionPreviewView])
+        stack.axis = .vertical
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        sessionCard.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: sessionCard.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: sessionCard.trailingAnchor, constant: -12),
+            stack.topAnchor.constraint(equalTo: sessionCard.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: sessionCard.bottomAnchor, constant: -12),
+            sessionPreviewView.heightAnchor.constraint(equalToConstant: 180)
+        ])
+    }
+
+    private func configureStatusLabel() {
+        statusLabel.numberOfLines = 0
+        statusLabel.font = .preferredFont(forTextStyle: .footnote)
+        statusLabel.textColor = .secondaryLabel
+        statusLabel.text = "Ready"
+    }
+
+    private func render(_ state: TerminalSurfaceState) {
+        statusLabel.text = "\(state.connectionTitle) • \(state.sessionState.rawValue.capitalized) • \(state.statusMessage)"
+        sessionHostLabel.text = state.connectionTitle.isEmpty ? "No Active Session" : state.connectionTitle
+        sessionStateLabel.text = state.sessionState.rawValue.capitalized
+        sessionPreviewView.text = String(state.transcript.suffix(1200))
+    }
+
+    private func openTerminalIfNeeded() {
+        guard !didAutoOpenTerminal else { return }
+        didAutoOpenTerminal = true
+        openTerminal()
+    }
 }
 
 @MainActor
 final class RebootTerminalViewController: UIViewController, UITextFieldDelegate {
     private let model: RebootAppModel
     private let outputView = UITextView()
+    private let tabsRow = UIStackView()
+    private let shortcutsRow = UIStackView()
     private let inputField = UITextField()
     private var terminalObserverID: UUID?
 
@@ -841,12 +1055,14 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Terminal"
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = UIColor(red: 0.07, green: 0.08, blue: 0.13, alpha: 1)
 
         outputView.isEditable = false
-        outputView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        outputView.backgroundColor = UIColor.secondarySystemBackground
+        outputView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        outputView.backgroundColor = UIColor(red: 0.08, green: 0.09, blue: 0.16, alpha: 1)
+        outputView.textColor = UIColor(red: 0.42, green: 0.86, blue: 0.97, alpha: 1)
         outputView.layer.cornerRadius = 12
+        outputView.textContainerInset = UIEdgeInsets(top: 14, left: 10, bottom: 14, right: 10)
 
         inputField.borderStyle = .roundedRect
         inputField.placeholder = "Command"
@@ -854,12 +1070,47 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         inputField.autocorrectionType = .no
         inputField.delegate = self
 
+        tabsRow.axis = .horizontal
+        tabsRow.spacing = 8
+        tabsRow.distribution = .fillProportionally
+        let prev = makeChipButton("‹")
+        prev.configuration?.baseBackgroundColor = UIColor(red: 0.18, green: 0.20, blue: 0.30, alpha: 1)
+        let activeTab = makeChipButton("active")
+        activeTab.configuration?.baseBackgroundColor = UIColor(red: 0.21, green: 0.24, blue: 0.35, alpha: 1)
+        let addTab = makeChipButton("+")
+        addTab.configuration?.baseBackgroundColor = UIColor(red: 0.18, green: 0.20, blue: 0.30, alpha: 1)
+        tabsRow.addArrangedSubview(prev)
+        tabsRow.addArrangedSubview(activeTab)
+        tabsRow.addArrangedSubview(addTab)
+
+        shortcutsRow.axis = .horizontal
+        shortcutsRow.spacing = 6
+        shortcutsRow.distribution = .fillEqually
+        let shortcutKeys: [(String, String)] = [("esc", "\u{1B}"), ("tab", "\t"), ("ctrl", "\u{3}"), ("alt", ""), ("/", "/"), ("|", "|"), ("~", "~"), ("-", "-"), ("^C", "\u{3}")]
+        for item in shortcutKeys {
+            let button = UIButton(type: .system)
+            button.configuration = .tinted()
+            button.configuration?.title = item.0
+            button.addAction(UIAction { [weak self] _ in
+                guard let self else { return }
+                if !item.1.isEmpty {
+                    self.model.send(item.1)
+                }
+            }, for: .touchUpInside)
+            shortcutsRow.addArrangedSubview(button)
+        }
+
         let sendButton = UIButton(type: .system)
         sendButton.configuration = .filled()
         sendButton.configuration?.title = "Send"
         sendButton.addTarget(self, action: #selector(sendCommand), for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [outputView, inputField, sendButton])
+        let inputRow = UIStackView(arrangedSubviews: [inputField, sendButton])
+        inputRow.axis = .horizontal
+        inputRow.spacing = 8
+        sendButton.widthAnchor.constraint(equalToConstant: 84).isActive = true
+
+        let stack = UIStackView(arrangedSubviews: [outputView, tabsRow, shortcutsRow, inputRow])
         stack.axis = .vertical
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -870,7 +1121,9 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
             stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
             stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             stack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-            outputView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300)
+            outputView.heightAnchor.constraint(greaterThanOrEqualToConstant: 300),
+            tabsRow.heightAnchor.constraint(equalToConstant: 36),
+            shortcutsRow.heightAnchor.constraint(equalToConstant: 34)
         ])
 
     }
@@ -910,6 +1163,15 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         sendCommand()
         return true
+    }
+
+    private func makeChipButton(_ title: String) -> UIButton {
+        let button = UIButton(type: .system)
+        button.configuration = .filled()
+        button.configuration?.title = title
+        button.configuration?.baseForegroundColor = .white
+        button.configuration?.cornerStyle = .medium
+        return button
     }
 }
 
