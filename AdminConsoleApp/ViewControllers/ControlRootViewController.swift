@@ -1825,7 +1825,7 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
 }
 
 @MainActor
-final class RebootTerminalViewController: UIViewController, UITextFieldDelegate {
+final class RebootTerminalViewController: UIViewController, UITextFieldDelegate, UITextViewDelegate {
     private let model: RebootAppModel
     private let titleLabel = UILabel()
     private let outputView = UITextView()
@@ -1834,6 +1834,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
     private let keyboardInputField = UITextField()
     private var terminalObserverID: UUID?
     private var lastAppliedTerminalSize: TerminalSize?
+    private var isFollowingTail = true
 
     init(model: RebootAppModel) {
         self.model = model
@@ -1860,6 +1861,7 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
         outputView.textContainer.lineBreakMode = .byWordWrapping
         outputView.translatesAutoresizingMaskIntoConstraints = false
         outputView.isSelectable = true
+        outputView.delegate = self
 
         shortcutsScrollView.showsHorizontalScrollIndicator = false
         shortcutsScrollView.alwaysBounceHorizontal = true
@@ -1992,17 +1994,50 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate 
 
     private func render(state: TerminalSurfaceState) {
         titleLabel.text = state.connectionTitle.isEmpty ? "Terminal" : state.connectionTitle
+        let shouldScrollToBottom = isFollowingTail || isNearBottom(outputView)
         let viewport = state.buffer.viewportText(insertingCursor: state.sessionState == .connected)
         outputView.text = viewport.isEmpty ? state.statusMessage : viewport
-        let length = outputView.text.utf16.count
-        if length > 0 {
-            outputView.scrollRangeToVisible(NSRange(location: length - 1, length: 1))
+        if shouldScrollToBottom {
+            scrollOutputToBottom()
+            isFollowingTail = true
         }
     }
 
     @objc
     private func focusKeyboard() {
+        isFollowingTail = true
         keyboardInputField.becomeFirstResponder()
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        guard scrollView === outputView else { return }
+        isFollowingTail = false
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard scrollView === outputView, !decelerate else { return }
+        isFollowingTail = isNearBottom(scrollView)
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard scrollView === outputView else { return }
+        isFollowingTail = isNearBottom(scrollView)
+    }
+
+    private func scrollOutputToBottom() {
+        let maxOffsetY = max(
+            -outputView.adjustedContentInset.top,
+            outputView.contentSize.height - outputView.bounds.height + outputView.adjustedContentInset.bottom
+        )
+        outputView.setContentOffset(CGPoint(x: 0, y: maxOffsetY), animated: false)
+    }
+
+    private func isNearBottom(_ scrollView: UIScrollView, threshold: CGFloat = 16) -> Bool {
+        let maxOffsetY = max(
+            -scrollView.adjustedContentInset.top,
+            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        )
+        return scrollView.contentOffset.y >= (maxOffsetY - threshold)
     }
 
     func textField(
