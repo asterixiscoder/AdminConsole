@@ -1880,6 +1880,9 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     private var lastAppliedTerminalSize: TerminalSize?
     private var isFollowingTail = true
     private var isInteractingWithTerminalScroll = false
+    private var currentInputBuffer = ""
+    private var commandHistory: [String] = []
+    private var historyCursor: Int?
 
     init(model: RebootAppModel) {
         self.model = model
@@ -1976,7 +1979,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
             self?.handleTerminalInsertedText(text)
         }
         keyboardInputField.onDeleteBackward = { [weak self] in
-            self?.model.send("\u{7F}")
+            self?.handleTerminalBackspace()
         }
 
         let focusTap = UITapGestureRecognizer(target: self, action: #selector(focusKeyboard))
@@ -2130,7 +2133,71 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         guard !normalized.isEmpty else {
             return
         }
+        captureInputForLocalHistory(normalized)
         model.send(normalized)
+    }
+
+    private func handleTerminalBackspace() {
+        if !currentInputBuffer.isEmpty {
+            currentInputBuffer.removeLast()
+        }
+        historyCursor = nil
+        model.send("\u{7F}")
+    }
+
+    private func captureInputForLocalHistory(_ text: String) {
+        for character in text {
+            if character == "\n" {
+                commitCurrentInputToHistory()
+                continue
+            }
+
+            currentInputBuffer.append(character)
+            historyCursor = nil
+        }
+    }
+
+    private func commitCurrentInputToHistory() {
+        let command = currentInputBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        currentInputBuffer = ""
+        historyCursor = nil
+
+        guard !command.isEmpty else {
+            return
+        }
+
+        if commandHistory.last != command {
+            commandHistory.append(command)
+            if commandHistory.count > 100 {
+                commandHistory.removeFirst(commandHistory.count - 100)
+            }
+        }
+    }
+
+    private func recallPreviousCommandFromHistory() {
+        guard !commandHistory.isEmpty else {
+            return
+        }
+
+        let nextIndex: Int
+        if let historyCursor {
+            nextIndex = max(0, historyCursor - 1)
+        } else {
+            nextIndex = commandHistory.count - 1
+        }
+
+        historyCursor = nextIndex
+        replaceCurrentInput(with: commandHistory[nextIndex])
+    }
+
+    private func replaceCurrentInput(with command: String) {
+        if !currentInputBuffer.isEmpty {
+            for _ in currentInputBuffer {
+                model.send("\u{7F}")
+            }
+        }
+        model.send(command)
+        currentInputBuffer = command
     }
 
     private func configureSessionRow() {
@@ -2142,8 +2209,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
 
         styleSessionButton(previousCommandButton, title: "<")
         previousCommandButton.addAction(UIAction { [weak self] _ in
-            // Termius-like quick access: recall previous command via shell history.
-            self?.model.send("\u{1B}[A")
+            self?.recallPreviousCommandFromHistory()
             self?.focusKeyboard()
         }, for: .touchUpInside)
 
