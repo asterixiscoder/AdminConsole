@@ -1860,8 +1860,12 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
         outputView.textContainer.lineFragmentPadding = 0
         outputView.textContainer.lineBreakMode = .byWordWrapping
         outputView.translatesAutoresizingMaskIntoConstraints = false
+        outputView.isScrollEnabled = true
+        outputView.alwaysBounceVertical = true
+        outputView.keyboardDismissMode = .interactive
         outputView.isSelectable = true
         outputView.delegate = self
+        outputView.panGestureRecognizer.addTarget(self, action: #selector(handleTerminalPan(_:)))
 
         shortcutsScrollView.showsHorizontalScrollIndicator = false
         shortcutsScrollView.alwaysBounceHorizontal = true
@@ -2022,6 +2026,18 @@ final class RebootTerminalViewController: UIViewController, UITextFieldDelegate,
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         guard scrollView === outputView else { return }
         isFollowingTail = isNearBottom(scrollView)
+    }
+
+    @objc
+    private func handleTerminalPan(_ gesture: UIPanGestureRecognizer) {
+        switch gesture.state {
+        case .began, .changed:
+            isFollowingTail = false
+        case .ended, .cancelled, .failed:
+            isFollowingTail = isNearBottom(outputView)
+        default:
+            break
+        }
     }
 
     private func scrollOutputToBottom() {
