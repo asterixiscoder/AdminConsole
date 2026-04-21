@@ -2148,7 +2148,6 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         outputView.keyboardDismissMode = .interactive
         outputView.isSelectable = true
         outputView.delegate = self
-        outputView.panGestureRecognizer.addTarget(self, action: #selector(handleTerminalPan(_:)))
 
         shortcutsScrollView.showsHorizontalScrollIndicator = false
         shortcutsScrollView.alwaysBounceHorizontal = true
@@ -2276,8 +2275,8 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     private func render(state: TerminalSurfaceState) {
         titleLabel.text = state.connectionTitle.isEmpty ? "Terminal" : state.connectionTitle
         applySessionStatus(state.sessionState)
-        let shouldScrollToBottom = isFollowingTail && !isInteractingWithTerminalScroll
         let currentOffset = outputView.contentOffset
+        let shouldScrollToBottom = shouldStickToBottomDuringRender(previousOffset: currentOffset)
         let renderedText = renderableTerminalText(for: state)
         outputView.text = renderedText
         if shouldScrollToBottom {
@@ -2323,6 +2322,21 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         return lines.joined(separator: "\n")
     }
 
+    private func shouldStickToBottomDuringRender(previousOffset: CGPoint) -> Bool {
+        // While typing, keep terminal pinned to tail unless user is intentionally scrolling.
+        if keyboardInputField.isFirstResponder && !isInteractingWithTerminalScroll {
+            return true
+        }
+        if isFollowingTail {
+            return true
+        }
+        let maxOffsetY = max(
+            -outputView.adjustedContentInset.top,
+            outputView.contentSize.height - outputView.bounds.height + outputView.adjustedContentInset.bottom
+        )
+        return previousOffset.y >= (maxOffsetY - 20)
+    }
+
     @objc
     private func focusKeyboard() {
         isFollowingTail = true
@@ -2354,20 +2368,6 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         guard scrollView === outputView else { return }
         isInteractingWithTerminalScroll = false
         isFollowingTail = isNearBottom(scrollView)
-    }
-
-    @objc
-    private func handleTerminalPan(_ gesture: UIPanGestureRecognizer) {
-        switch gesture.state {
-        case .began, .changed:
-            isInteractingWithTerminalScroll = true
-            isFollowingTail = false
-        case .ended, .cancelled, .failed:
-            isInteractingWithTerminalScroll = false
-            isFollowingTail = isNearBottom(outputView)
-        default:
-            break
-        }
     }
 
     private func scrollOutputToBottom() {

@@ -2,30 +2,30 @@
 
 [![iOS CI](https://github.com/asterixiscoder/AdminConsole/actions/workflows/ios-ci.yml/badge.svg)](https://github.com/asterixiscoder/AdminConsole/actions/workflows/ios-ci.yml)
 
-AdminConsole is an iOS application that turns an iPhone plus an external display into a unified desktop-like environment. The iPhone acts as the control surface, while the external display renders the desktop workspace with terminal, files, web, and remote desktop windows.
+AdminConsole is an iOS SSH client built with a mobile-first Termius-like UX.
+The iPhone app is fully standalone for daily SSH usage (hosts, favorites/recents, connect, terminal input/output).
+External display support is implemented as an add-on mirror for the active terminal session.
 
 The repository currently contains:
 
-- a working Xcode scaffold
-- a local Swift package for modular core logic
-- Phase 0 prototype wiring for multi-scene desktop state
-- a live SSH terminal runtime wired through `RuntimeRegistry`
-- an in-app files workspace with import and export
-- a real VNC runtime with password auth, Hextile/ZRLE decoding, pointer/drag/wheel, and clipboard bridge
-- VNC reconnect handling (auto-reconnect backoff, lifecycle pause/resume, reconnect indicator on desktop scene)
+- iOS app with reboot mobile shell (`Vaults`, `Connections`, `Profile`)
+- host persistence with favorites/recents behavior
+- live SSH runtime with Keychain-backed credential reuse and host key trust
+- terminal UX hardening (stable keyboard input, backspace, command history recall, status row, soft keys)
+- external display terminal mirroring (`UIWindowScene` for external screen)
+- local Swift package (`Packages/AppModules`) with modular runtime/domain layers
 - architecture and roadmap documentation
+- app-creator adopted project tooling (`Makefile`, `scripts/`, `tasks/`)
 
 ## Current Status
 
-- Xcode project and workspace scaffolded
-- `AppModules` connected to the app target
-- shared `DesktopStore` and `PhaseZeroCoordinator` in place
-- control scene and external desktop scene both wired to shared state
-- browser spike and keyboard/pointer prototype started
-- focused terminal windows can open a real SSH shell session
-- host key validation and Keychain-backed SSH credential reuse
-- files runtime import and export flows
-- VNC runtime with reconnect UX and transport-level state handling
+- Mobile-first reboot flow is primary app path.
+- SSH connect/disconnect/reconnect works on phone without external display dependency.
+- Host catalog persistence is active (vault sections, favorites, recents).
+- Terminal input pipeline uses `UIKeyInput` proxy for deterministic typing behavior.
+- External display mirrors active terminal session and follows terminal resize updates.
+- CI workflow is active for iOS build/package test checks.
+- Local developer workflow supports `make diagnose/build/test`.
 
 ## Repository Layout
 
@@ -54,14 +54,22 @@ If Xcode resolves simulator architectures incorrectly on your machine, re-open t
 
 ### Local Checks
 
-Swift Package tests:
+Project diagnostics/build/test:
+
+```bash
+make diagnose
+make build
+make test
+```
+
+Swift Package tests (direct):
 
 ```bash
 cd Packages/AppModules
 swift test --disable-sandbox
 ```
 
-App build:
+App build (direct):
 
 ```bash
 xcodebuild -project AdminConsole.xcodeproj \
@@ -119,19 +127,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 ## Solution Summary
 
 - Platform foundation: `UIKit-first`, scene-based lifecycle, `Swift Concurrency`
-- Core principle: one shared desktop state for all scenes
-- External display: rendered desktop surface managed by the app
-- iPhone: control scene for cursor, keyboard, shortcuts, window management, and command flows
-- Runtime stack:
-  - terminal rendering with a custom surface and terminal adapter
-  - SSH via `SwiftNIO SSH`
-  - browser windows via `WKWebView`
-  - VNC via a dedicated RFB runtime
-- MVP scope:
-  - one desktop workspace on an external display
-  - terminal, files, VNC, and one browser window
-  - hardware keyboard and pointer support
-  - layout persistence and reconnect handling
+- Product mode: mobile-first SSH client with Termius-like mental model
+- Core runtime:
+  - SSH terminal via `SwiftNIO SSH`
+  - host persistence and credential security services
+  - external monitor terminal mirror for active session
+- UX focus:
+  - fast connect from stored hosts/manual connections
+  - readable terminal on phone
+  - robust lifecycle handling on background/foreground transitions
 
 ## Guiding Principles
 

@@ -85,7 +85,7 @@ Acceptance:
 - Branch: `codex/termius-reboot-clean`.
 - Mobile root switched to reboot flow.
 - Host persistence + favorites/recents implemented in reboot store.
-- External display disabled for baseline parity stabilization.
+- External display mirror re-enabled as a post-mobile add-on.
 - Added quick-connect behavior from favorites/recents in `Connections`.
 - Added host handoff (`Vault Host -> Connections`) with auto-prefill.
 - Reworked terminal state updates to multi-observer model (stable across screens).
@@ -106,3 +106,13 @@ Acceptance:
     - `<` recalls previous command from shell history,
     - center button reflects live session state (`idle/connecting/active/failed`) and refocuses terminal,
     - `+` opens quick session actions (`Paste Clipboard`, `Send Ctrl+C`, `Clear Screen`).
+- Added external display mirroring improvements:
+  - dedicated external `UIWindowScene` with read-only terminal rendering,
+  - terminal resize propagation from display geometry,
+  - reconnect-safe mirror lifecycle.
+- Added shell-width stabilization:
+  - runtime `resize` + explicit `stty cols/rows` sync after connection/resize,
+  - one-column `ls` bootstrap alias for consistent readability.
+- Adopted project tooling via `app-creator`:
+  - `Makefile` + `scripts/` + `tasks/` installed,
+  - local workflow via `make diagnose/build/test`.
