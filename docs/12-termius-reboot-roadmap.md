@@ -54,10 +54,15 @@ Acceptance:
 - Better host validation/errors and connection retry UX.
 - Session lifecycle improvements (foreground/background handling).
 - Terminal ergonomics: larger buffer, copy/select, keyboard shortcuts.
+- UI modernization for admin workflows:
+  - semantic theme token layer,
+  - runtime theme switching (`system`, `midnight`, `graphite`, `light-ops`),
+  - visual consistency across shell/tabs/connections/terminal surfaces.
 
 Acceptance:
 - Stable reconnect/disconnect behavior across app lifecycle.
 - Usable for repeated daily SSH sessions.
+- Theme switch should not reduce information density or operational clarity.
 
 ### Phase 3: External Monitor Mirroring (feature add-on)
 - Re-enable external display scene.
@@ -113,6 +118,23 @@ Acceptance:
 - Added shell-width stabilization:
   - runtime `resize` + explicit `stty cols/rows` sync after connection/resize,
   - one-column `ls` bootstrap alias for consistent readability.
+- Started P0 UI theming implementation:
+  - introduced centralized `AdminTheme` + `AdminThemeManager`,
+  - wired live theme updates for root shell and `Connections` screen,
+  - added Profile-based theme selector for immediate user control.
+- Started P1 workspace usability rollout:
+  - `Vaults` upgraded with themed workspace card (search/scope/summary) and improved section readability,
+  - `Terminal` upgraded with unified themed surfaces for header/session controls/soft keys/output,
+  - dark/light/graphite palettes now keep dense admin workflows visually consistent.
+- Completed first App Intents pass:
+  - `OpenWorkspaceIntent` for open-app routing,
+  - `ConnectSavedHostIntent` backed by saved host entity/query,
+  - App Shortcuts provider + launch-time shortcut parameter refresh.
+- Completed form-wide theming coverage:
+  - host details card and host editor forms are theme-aware,
+  - password prompt is theme-aware,
+  - auxiliary SSH session form is theme-aware,
+  - live theme updates now propagate across all key user forms.
 - Adopted project tooling via `app-creator`:
   - `Makefile` + `scripts/` + `tasks/` installed,
   - local workflow via `make diagnose/build/test`.

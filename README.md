@@ -12,6 +12,9 @@ The repository currently contains:
 - host persistence with favorites/recents behavior
 - live SSH runtime with Keychain-backed credential reuse and host key trust
 - terminal UX hardening (stable keyboard input, backspace, command history recall, status row, soft keys)
+- semantic theme token system with runtime theme switching (`System`, `Midnight`, `Graphite`, `Light Ops`)
+- form-wide visual consistency for admin workflows (host cards, host editor/details, password prompts, SSH forms)
+- first App Intents integration for workspace routing and connect-to-saved-host shortcuts
 - external display terminal mirroring (`UIWindowScene` for external screen)
 - local Swift package (`Packages/AppModules`) with modular runtime/domain layers
 - architecture and roadmap documentation
@@ -23,6 +26,8 @@ The repository currently contains:
 - SSH connect/disconnect/reconnect works on phone without external display dependency.
 - Host catalog persistence is active (vault sections, favorites, recents).
 - Terminal input pipeline uses `UIKeyInput` proxy for deterministic typing behavior.
+- Runtime theming is available across shell, workspace cards, and user forms.
+- App Shortcuts expose open-workspace and connect-saved-host actions.
 - External display mirrors active terminal session and follows terminal resize updates.
 - CI workflow is active for iOS build/package test checks.
 - Local developer workflow supports `make diagnose/build/test`.
@@ -78,6 +83,7 @@ xcodebuild -project AdminConsole.xcodeproj \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath /tmp/AdminConsoleDerivedData \
   build CODE_SIGNING_ALLOWED=NO
+```
 
 Recommended for local consistency with CI cache paths:
 
@@ -92,7 +98,6 @@ env HOME=/tmp/adminconsole-home \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath /tmp/AdminConsoleDerivedData \
   build CODE_SIGNING_ALLOWED=NO
-```
 ```
 
 ## Branching Model
@@ -123,6 +128,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 - [Roadmap MVP](docs/09-roadmap-mvp.md)
 - [Testing and Validation](docs/10-testing-and-validation.md)
 - [Termius Parity Roadmap](docs/11-termius-parity-roadmap.md)
+- [Termius Reboot Roadmap](docs/12-termius-reboot-roadmap.md)
+- [Project Analysis (2026-04-20)](docs/13-project-analysis-2026-04-20.md)
 
 ## Solution Summary
 

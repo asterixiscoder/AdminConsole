@@ -13,6 +13,12 @@ final class SSHTerminalSessionViewController: UIViewController, UITextFieldDeleg
     private let runCommandField = UITextField()
     private let runResultLabel = UILabel()
     private let commandLogLabel = UILabel()
+    private let sendButton = UIButton(type: .system)
+    private let sendLineButton = UIButton(type: .system)
+    private let runCommandButton = UIButton(type: .system)
+    private let pasteButton = UIButton(type: .system)
+    private var shortcutButtons: [UIButton] = []
+    private let themeManager = AdminThemeManager.shared
 
     private var commandLogEntries: [String] = []
     private var updatesTask: Task<Void, Never>?
@@ -22,20 +28,15 @@ final class SSHTerminalSessionViewController: UIViewController, UITextFieldDeleg
         super.viewDidLoad()
 
         title = "SSH Session"
-        view.backgroundColor = .systemBackground
 
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
-        statusLabel.textColor = .secondaryLabel
         statusLabel.numberOfLines = 0
         statusLabel.text = "Preparing terminal session..."
 
         transcriptView.translatesAutoresizingMaskIntoConstraints = false
         transcriptView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        transcriptView.textColor = .label
-        transcriptView.backgroundColor = UIColor.secondarySystemBackground
         transcriptView.layer.cornerRadius = 12
         transcriptView.layer.borderWidth = 1
-        transcriptView.layer.borderColor = UIColor.separator.cgColor
         transcriptView.isEditable = false
         transcriptView.isSelectable = true
 
@@ -54,21 +55,17 @@ final class SSHTerminalSessionViewController: UIViewController, UITextFieldDeleg
         runCommandField.delegate = self
 
         runResultLabel.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        runResultLabel.textColor = .secondaryLabel
         runResultLabel.numberOfLines = 0
         runResultLabel.text = "Run command mode: idle."
 
         commandLogLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        commandLogLabel.textColor = .secondaryLabel
         commandLogLabel.numberOfLines = 0
         commandLogLabel.text = "No input sent yet."
 
-        let sendButton = UIButton(type: .system)
         sendButton.configuration = .filled()
         sendButton.configuration?.title = "Send"
         sendButton.addTarget(self, action: #selector(sendRawInput), for: .touchUpInside)
 
-        let sendLineButton = UIButton(type: .system)
         sendLineButton.configuration = .tinted()
         sendLineButton.configuration?.title = "Send + Enter"
         sendLineButton.addTarget(self, action: #selector(sendInputLine), for: .touchUpInside)
@@ -78,7 +75,6 @@ final class SSHTerminalSessionViewController: UIViewController, UITextFieldDeleg
         sendRow.spacing = 8
         sendRow.distribution = .fillEqually
 
-        let runCommandButton = UIButton(type: .system)
         runCommandButton.configuration = .filled()
         runCommandButton.configuration?.title = "Run Command"
         runCommandButton.addTarget(self, action: #selector(executeScriptedCommand), for: .touchUpInside)
@@ -93,8 +89,8 @@ final class SSHTerminalSessionViewController: UIViewController, UITextFieldDeleg
         shortcutsRow.axis = .horizontal
         shortcutsRow.spacing = 8
         shortcutsRow.distribution = .fillEqually
+        shortcutButtons = shortcutsRow.arrangedSubviews.compactMap { $0 as? UIButton }
 
-        let pasteButton = UIButton(type: .system)
         pasteButton.configuration = .plain()
         pasteButton.configuration?.title = "Paste Clipboard"
         pasteButton.addTarget(self, action: #selector(pasteClipboard), for: .touchUpInside)
@@ -125,11 +121,14 @@ final class SSHTerminalSessionViewController: UIViewController, UITextFieldDeleg
             transcriptView.heightAnchor.constraint(greaterThanOrEqualToConstant: 320)
         ])
 
+        bindTheme()
+        applyTheme()
         startUpdates()
     }
 
     deinit {
         updatesTask?.cancel()
+        NotificationCenter.default.removeObserver(self)
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
@@ -252,6 +251,58 @@ final class SSHTerminalSessionViewController: UIViewController, UITextFieldDeleg
 
     private func shellSingleQuoted(_ value: String) -> String {
         value.replacingOccurrences(of: "'", with: "'\"'\"'")
+    }
+
+    private func bindTheme() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemeChange),
+            name: .adminThemeDidChange,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleThemeChange() {
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        let theme = themeManager.theme(for: traitCollection)
+        view.backgroundColor = theme.backgroundPrimary
+        statusLabel.textColor = theme.textSecondary
+        transcriptView.textColor = theme.textPrimary
+        transcriptView.backgroundColor = theme.surfaceSecondary
+        transcriptView.layer.borderColor = theme.strokeSubtle.cgColor
+        commandField.backgroundColor = theme.surfacePrimary
+        commandField.textColor = theme.textPrimary
+        commandField.tintColor = theme.accent
+        commandField.keyboardAppearance = themeManager.resolvedStyle(for: traitCollection) == .lightOps ? .light : .dark
+        runCommandField.backgroundColor = theme.surfacePrimary
+        runCommandField.textColor = theme.textPrimary
+        runCommandField.tintColor = theme.accent
+        runCommandField.keyboardAppearance = themeManager.resolvedStyle(for: traitCollection) == .lightOps ? .light : .dark
+        runResultLabel.textColor = theme.textSecondary
+        commandLogLabel.textColor = theme.textSecondary
+        sendButton.configuration?.baseForegroundColor = .white
+        sendButton.configuration?.baseBackgroundColor = theme.accent
+        sendLineButton.configuration?.baseForegroundColor = theme.textPrimary
+        sendLineButton.configuration?.baseBackgroundColor = theme.accentMuted
+        runCommandButton.configuration?.baseForegroundColor = .white
+        runCommandButton.configuration?.baseBackgroundColor = theme.statusSuccess
+        pasteButton.configuration?.baseForegroundColor = theme.textPrimary
+        for button in shortcutButtons {
+            button.configuration?.baseForegroundColor = theme.textPrimary
+            button.configuration?.baseBackgroundColor = theme.surfacePrimary
+        }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        applyTheme()
     }
 
     @objc

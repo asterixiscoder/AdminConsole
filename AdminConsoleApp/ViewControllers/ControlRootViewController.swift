@@ -4,8 +4,131 @@ import SecurityKit
 import SSHKit
 import UIKit
 
-private extension Notification.Name {
+extension Notification.Name {
     static let rebootConnectHostRequested = Notification.Name("rebootConnectHostRequested")
+    static let adminThemeDidChange = Notification.Name("adminThemeDidChange")
+}
+
+enum AdminThemeStyle: String, CaseIterable {
+    case system
+    case midnight
+    case graphite
+    case lightOps
+
+    var title: String {
+        switch self {
+        case .system:
+            return "System"
+        case .midnight:
+            return "Midnight"
+        case .graphite:
+            return "Graphite"
+        case .lightOps:
+            return "Light Ops"
+        }
+    }
+}
+
+struct AdminTheme {
+    let backgroundPrimary: UIColor
+    let backgroundElevated: UIColor
+    let surfacePrimary: UIColor
+    let surfaceSecondary: UIColor
+    let textPrimary: UIColor
+    let textSecondary: UIColor
+    let accent: UIColor
+    let accentMuted: UIColor
+    let strokeSubtle: UIColor
+    let statusSuccess: UIColor
+    let statusWarning: UIColor
+    let statusError: UIColor
+}
+
+@MainActor
+final class AdminThemeManager {
+    static let shared = AdminThemeManager()
+
+    private let storageKey = "TermiusReboot.AdminThemeStyle.v1"
+
+    private(set) var selectedStyle: AdminThemeStyle {
+        didSet {
+            UserDefaults.standard.set(selectedStyle.rawValue, forKey: storageKey)
+            NotificationCenter.default.post(name: .adminThemeDidChange, object: nil)
+        }
+    }
+
+    private init() {
+        let raw = UserDefaults.standard.string(forKey: storageKey) ?? ""
+        selectedStyle = AdminThemeStyle(rawValue: raw) ?? .system
+    }
+
+    func set(style: AdminThemeStyle) {
+        guard selectedStyle != style else {
+            return
+        }
+        selectedStyle = style
+    }
+
+    func theme(for traits: UITraitCollection) -> AdminTheme {
+        let effectiveStyle = resolvedStyle(for: traits)
+
+        switch effectiveStyle {
+        case .system:
+            return theme(for: traits)
+        case .midnight:
+            return AdminTheme(
+                backgroundPrimary: UIColor(red: 0.06, green: 0.08, blue: 0.12, alpha: 1),
+                backgroundElevated: UIColor(red: 0.09, green: 0.11, blue: 0.16, alpha: 1),
+                surfacePrimary: UIColor(red: 0.11, green: 0.14, blue: 0.21, alpha: 1),
+                surfaceSecondary: UIColor(red: 0.08, green: 0.10, blue: 0.16, alpha: 1),
+                textPrimary: UIColor(red: 0.93, green: 0.95, blue: 0.98, alpha: 1),
+                textSecondary: UIColor(red: 0.66, green: 0.72, blue: 0.82, alpha: 1),
+                accent: UIColor(red: 0.30, green: 0.59, blue: 0.98, alpha: 1),
+                accentMuted: UIColor(red: 0.23, green: 0.44, blue: 0.72, alpha: 0.28),
+                strokeSubtle: UIColor(red: 0.33, green: 0.39, blue: 0.50, alpha: 0.45),
+                statusSuccess: UIColor(red: 0.36, green: 0.83, blue: 0.53, alpha: 1),
+                statusWarning: UIColor(red: 0.96, green: 0.73, blue: 0.33, alpha: 1),
+                statusError: UIColor(red: 0.94, green: 0.40, blue: 0.36, alpha: 1)
+            )
+        case .graphite:
+            return AdminTheme(
+                backgroundPrimary: UIColor(red: 0.10, green: 0.11, blue: 0.12, alpha: 1),
+                backgroundElevated: UIColor(red: 0.14, green: 0.15, blue: 0.17, alpha: 1),
+                surfacePrimary: UIColor(red: 0.18, green: 0.19, blue: 0.21, alpha: 1),
+                surfaceSecondary: UIColor(red: 0.15, green: 0.16, blue: 0.18, alpha: 1),
+                textPrimary: UIColor(red: 0.95, green: 0.96, blue: 0.97, alpha: 1),
+                textSecondary: UIColor(red: 0.72, green: 0.74, blue: 0.78, alpha: 1),
+                accent: UIColor(red: 0.39, green: 0.68, blue: 0.95, alpha: 1),
+                accentMuted: UIColor(red: 0.39, green: 0.68, blue: 0.95, alpha: 0.20),
+                strokeSubtle: UIColor(red: 0.42, green: 0.44, blue: 0.49, alpha: 0.40),
+                statusSuccess: UIColor(red: 0.45, green: 0.82, blue: 0.55, alpha: 1),
+                statusWarning: UIColor(red: 0.96, green: 0.74, blue: 0.35, alpha: 1),
+                statusError: UIColor(red: 0.93, green: 0.42, blue: 0.39, alpha: 1)
+            )
+        case .lightOps:
+            return AdminTheme(
+                backgroundPrimary: UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1),
+                backgroundElevated: UIColor(red: 0.99, green: 0.99, blue: 1.00, alpha: 1),
+                surfacePrimary: UIColor.white,
+                surfaceSecondary: UIColor(red: 0.94, green: 0.95, blue: 0.97, alpha: 1),
+                textPrimary: UIColor(red: 0.10, green: 0.13, blue: 0.20, alpha: 1),
+                textSecondary: UIColor(red: 0.35, green: 0.41, blue: 0.53, alpha: 1),
+                accent: UIColor(red: 0.17, green: 0.44, blue: 0.92, alpha: 1),
+                accentMuted: UIColor(red: 0.17, green: 0.44, blue: 0.92, alpha: 0.12),
+                strokeSubtle: UIColor(red: 0.73, green: 0.77, blue: 0.85, alpha: 0.55),
+                statusSuccess: UIColor(red: 0.14, green: 0.60, blue: 0.29, alpha: 1),
+                statusWarning: UIColor(red: 0.74, green: 0.47, blue: 0.01, alpha: 1),
+                statusError: UIColor(red: 0.76, green: 0.20, blue: 0.15, alpha: 1)
+            )
+        }
+    }
+
+    func resolvedStyle(for traits: UITraitCollection) -> AdminThemeStyle {
+        if selectedStyle == .system {
+            return traits.userInterfaceStyle == .light ? .lightOps : .midnight
+        }
+        return selectedStyle
+    }
 }
 
 final class RebootTerminalInputProxyView: UIView, UIKeyInput {
@@ -631,6 +754,7 @@ final class RebootRootViewController: UIViewController, RebootPhoneRouting {
     }
 
     private let model = AppEnvironment.rebootModel
+    private let themeManager = AdminThemeManager.shared
     private let contentContainer = UIView()
     private let tabBarContainer = UIView()
     private let tabStack = UIStackView()
@@ -644,9 +768,19 @@ final class RebootRootViewController: UIViewController, RebootPhoneRouting {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
         configureLayout()
+        bindTheme()
+        applyTheme()
         switchToTab(.vaults, animated: false)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        applyPendingIntentRouteIfNeeded()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     func sceneDidEnterBackground() {
@@ -655,15 +789,15 @@ final class RebootRootViewController: UIViewController, RebootPhoneRouting {
 
     func sceneWillEnterForeground() {
         model.sceneWillEnterForeground()
+        applyPendingIntentRouteIfNeeded()
     }
 
     private func configureLayout() {
         contentContainer.translatesAutoresizingMaskIntoConstraints = false
         tabBarContainer.translatesAutoresizingMaskIntoConstraints = false
-        tabBarContainer.backgroundColor = UIColor.secondarySystemBackground
         tabBarContainer.layer.cornerRadius = 28
         tabBarContainer.layer.shadowColor = UIColor.black.cgColor
-        tabBarContainer.layer.shadowOpacity = 0.08
+        tabBarContainer.layer.shadowOpacity = 0.20
         tabBarContainer.layer.shadowRadius = 20
         tabBarContainer.layer.shadowOffset = CGSize(width: 0, height: 10)
 
@@ -770,11 +904,44 @@ final class RebootRootViewController: UIViewController, RebootPhoneRouting {
     }
 
     private func updateTabSelection() {
+        let theme = themeManager.theme(for: traitCollection)
         for (tab, button) in tabButtons {
             let isSelected = tab == selectedTab
-            button.configuration?.baseForegroundColor = isSelected ? .systemBlue : .label
-            button.backgroundColor = isSelected ? UIColor.systemBlue.withAlphaComponent(0.14) : .clear
+            button.configuration?.baseForegroundColor = isSelected ? theme.accent : theme.textSecondary
+            button.backgroundColor = isSelected ? theme.accentMuted : .clear
         }
+    }
+
+    private func bindTheme() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemeChange),
+            name: .adminThemeDidChange,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleThemeChange() {
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        let theme = themeManager.theme(for: traitCollection)
+        view.backgroundColor = theme.backgroundPrimary
+        contentContainer.backgroundColor = theme.backgroundPrimary
+        tabBarContainer.backgroundColor = theme.backgroundElevated
+        tabBarContainer.layer.borderWidth = 1
+        tabBarContainer.layer.borderColor = theme.strokeSubtle.cgColor
+        updateTabSelection()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        applyTheme()
     }
 
     private func topPresenter() -> UIViewController {
@@ -788,6 +955,38 @@ final class RebootRootViewController: UIViewController, RebootPhoneRouting {
     private func presentFullscreen(_ controller: UIViewController) {
         controller.modalPresentationStyle = .fullScreen
         topPresenter().present(controller, animated: true)
+    }
+
+    private func applyPendingIntentRouteIfNeeded() {
+        guard let route = AppIntentRouteStore.dequeue() else {
+            return
+        }
+        apply(route: route)
+    }
+
+    private func apply(route: AppIntentRoute) {
+        switch route.target {
+        case .vaults:
+            switchToTabHandlingPresentation(.vaults)
+        case .connections:
+            switchToConnections(hostID: nil)
+        case .profile:
+            switchToTabHandlingPresentation(.profile)
+        case .terminal:
+            showTerminal()
+        case .connectHost:
+            switchToConnections(hostID: route.hostID)
+        }
+    }
+
+    private func switchToTabHandlingPresentation(_ tab: Tab) {
+        if presentedViewController != nil {
+            dismiss(animated: true) {
+                self.switchToTab(tab, animated: false)
+            }
+        } else {
+            switchToTab(tab, animated: false)
+        }
     }
 
     func showHostDetails(hostID: UUID) {
@@ -848,12 +1047,16 @@ final class RebootVaultsViewController: UIViewController, UITableViewDataSource,
 
     private let model: RebootAppModel
     private weak var router: (any RebootPhoneRouting)?
+    private let themeManager = AdminThemeManager.shared
     private var sections: [Section] = []
     private let titleLabel = UILabel()
     private let addButton = UIButton(type: .system)
+    private let workspaceCard = UIView()
+    private let workspaceSummaryLabel = UILabel()
     private let searchField = UITextField()
     private let scopeControl = UISegmentedControl(items: ["All", "Favorites", "Recents"])
     private let tableView = UITableView(frame: .zero, style: .plain)
+    private let emptyStateLabel = UILabel()
     private var searchText: String = ""
     private var selectedScope: FilterScope = .all
 
@@ -870,15 +1073,20 @@ final class RebootVaultsViewController: UIViewController, UITableViewDataSource,
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
         configureHeader()
         configureTableView()
+        bindTheme()
+        applyTheme()
         reloadSections()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         reloadSections()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     private func configureHeader() {
@@ -903,12 +1111,27 @@ final class RebootVaultsViewController: UIViewController, UITableViewDataSource,
 
         scopeControl.selectedSegmentIndex = 0
         scopeControl.addTarget(self, action: #selector(scopeChanged), for: .valueChanged)
+        scopeControl.translatesAutoresizingMaskIntoConstraints = false
+
+        workspaceSummaryLabel.font = .preferredFont(forTextStyle: .footnote)
+        workspaceSummaryLabel.numberOfLines = 1
+        workspaceSummaryLabel.text = "Ready"
+
+        workspaceCard.layer.cornerRadius = 16
+        workspaceCard.layer.borderWidth = 1
+        workspaceCard.translatesAutoresizingMaskIntoConstraints = false
+
+        let workspaceStack = UIStackView(arrangedSubviews: [workspaceSummaryLabel, searchField, scopeControl])
+        workspaceStack.axis = .vertical
+        workspaceStack.spacing = 12
+        workspaceStack.translatesAutoresizingMaskIntoConstraints = false
+        workspaceCard.addSubview(workspaceStack)
 
         let titleRow = UIStackView(arrangedSubviews: [titleLabel, UIView(), addButton])
         titleRow.axis = .horizontal
         titleRow.alignment = .center
 
-        let headerStack = UIStackView(arrangedSubviews: [titleRow, searchField, scopeControl])
+        let headerStack = UIStackView(arrangedSubviews: [titleRow, workspaceCard])
         headerStack.axis = .vertical
         headerStack.spacing = 16
         headerStack.translatesAutoresizingMaskIntoConstraints = false
@@ -920,20 +1143,32 @@ final class RebootVaultsViewController: UIViewController, UITableViewDataSource,
             addButton.heightAnchor.constraint(equalToConstant: 56),
             headerStack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
             headerStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            headerStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12)
+            headerStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            workspaceStack.leadingAnchor.constraint(equalTo: workspaceCard.leadingAnchor, constant: 12),
+            workspaceStack.trailingAnchor.constraint(equalTo: workspaceCard.trailingAnchor, constant: -12),
+            workspaceStack.topAnchor.constraint(equalTo: workspaceCard.topAnchor, constant: 12),
+            workspaceStack.bottomAnchor.constraint(equalTo: workspaceCard.bottomAnchor, constant: -12)
         ])
     }
 
     private func configureTableView() {
         tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.backgroundColor = .systemBackground
-        tableView.separatorStyle = .singleLine
+        tableView.separatorStyle = .none
         tableView.sectionHeaderTopPadding = 12
         tableView.keyboardDismissMode = .interactive
         tableView.contentInset = UIEdgeInsets(top: 12, left: 0, bottom: 120, right: 0)
         tableView.scrollIndicatorInsets = tableView.contentInset
         tableView.dataSource = self
         tableView.delegate = self
+        tableView.showsVerticalScrollIndicator = true
+
+        emptyStateLabel.font = .preferredFont(forTextStyle: .body)
+        emptyStateLabel.numberOfLines = 0
+        emptyStateLabel.textAlignment = .center
+        emptyStateLabel.text = "No hosts match this filter.\nTry another query or add a host."
+        emptyStateLabel.frame = CGRect(x: 0, y: 0, width: 0, height: 160)
+        tableView.backgroundView = emptyStateLabel
+
         view.addSubview(tableView)
 
         NSLayoutConstraint.activate([
@@ -964,6 +1199,8 @@ final class RebootVaultsViewController: UIViewController, UITableViewDataSource,
         if !hasScopedHosts {
             sections = []
         }
+        updateWorkspaceSummary()
+        emptyStateLabel.isHidden = !sections.isEmpty
         tableView.reloadData()
     }
 
@@ -974,20 +1211,54 @@ final class RebootVaultsViewController: UIViewController, UITableViewDataSource,
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        sections[section].title
+        nil
+    }
+
+    func tableView(_ tableView: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        let label = UILabel()
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.text = sections[section].title.uppercased()
+        let theme = themeManager.theme(for: traitCollection)
+        label.textColor = theme.textSecondary
+
+        let container = UIView()
+        container.addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -4),
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 8)
+        ])
+        return container
+    }
+
+    func tableView(_ tableView: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        34
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         let host = hosts(for: sections[indexPath.section])[indexPath.row]
+        let theme = themeManager.theme(for: traitCollection)
         cell.textLabel?.text = host.name
         cell.textLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        cell.textLabel?.textColor = theme.textPrimary
         cell.imageView?.image = UIImage(systemName: host.isFavorite ? "star.fill" : "server.rack")
-        cell.imageView?.tintColor = host.isFavorite ? .systemYellow : .systemBlue
+        cell.imageView?.tintColor = host.isFavorite ? theme.statusWarning : theme.accent
         let lastConnected = host.lastConnectedAt.map { Self.relativeFormatter.localizedString(for: $0, relativeTo: Date()) } ?? "never"
         cell.detailTextLabel?.text = "\(host.username)@\(host.hostname):\(host.port) • last: \(lastConnected)"
-        cell.detailTextLabel?.textColor = .secondaryLabel
-        cell.accessoryType = .disclosureIndicator
+        cell.detailTextLabel?.textColor = theme.textSecondary
+        cell.accessoryType = .none
+        cell.accessoryView = UIImageView(image: UIImage(systemName: "chevron.right"))
+        (cell.accessoryView as? UIImageView)?.tintColor = theme.textSecondary
+        cell.backgroundColor = theme.surfacePrimary
+        cell.layer.cornerRadius = 12
+        cell.layer.masksToBounds = true
+        let bg = UIView()
+        bg.backgroundColor = theme.accentMuted
+        bg.layer.cornerRadius = 12
+        cell.selectedBackgroundView = bg
         return cell
     }
 
@@ -1020,6 +1291,59 @@ final class RebootVaultsViewController: UIViewController, UITableViewDataSource,
     private func scopeChanged() {
         selectedScope = FilterScope(rawValue: scopeControl.selectedSegmentIndex) ?? .all
         reloadSections()
+    }
+
+    private func updateWorkspaceSummary() {
+        let total = filteredAllHosts().count
+        let favorites = filteredFavorites().count
+        let recents = filteredRecents().count
+        workspaceSummaryLabel.text = "\(total) hosts • \(favorites) favorites • \(recents) recents"
+    }
+
+    private func bindTheme() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemeChange),
+            name: .adminThemeDidChange,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleThemeChange() {
+        applyTheme()
+        tableView.reloadData()
+    }
+
+    private func applyTheme() {
+        let theme = themeManager.theme(for: traitCollection)
+        view.backgroundColor = theme.backgroundPrimary
+        titleLabel.textColor = theme.textPrimary
+        workspaceCard.backgroundColor = theme.surfacePrimary
+        workspaceCard.layer.borderColor = theme.strokeSubtle.cgColor
+        workspaceSummaryLabel.textColor = theme.textSecondary
+        addButton.configuration?.baseForegroundColor = theme.textPrimary
+        addButton.configuration?.baseBackgroundColor = theme.surfaceSecondary
+        searchField.backgroundColor = theme.surfaceSecondary
+        searchField.textColor = theme.textPrimary
+        searchField.tintColor = theme.accent
+        scopeControl.backgroundColor = theme.surfaceSecondary
+        scopeControl.selectedSegmentTintColor = theme.accent
+        let normalAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: theme.textSecondary]
+        let selectedAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor.white]
+        scopeControl.setTitleTextAttributes(normalAttrs, for: .normal)
+        scopeControl.setTitleTextAttributes(selectedAttrs, for: .selected)
+        tableView.backgroundColor = theme.backgroundPrimary
+        emptyStateLabel.textColor = theme.textSecondary
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        applyTheme()
+        tableView.reloadData()
     }
 
     private func filteredAllHosts() -> [RebootHost] {
@@ -1066,8 +1390,16 @@ final class RebootHostDetailsViewController: UIViewController {
     private let model: RebootAppModel
     private let hostID: UUID
     private weak var router: (any RebootPhoneRouting)?
+    private let themeManager = AdminThemeManager.shared
+    private let closeButton = UIButton(type: .system)
     private let titleLabel = UILabel()
+    private let hostCardView = UIView()
     private let summaryLabel = UILabel()
+    private let openButton = UIButton(type: .system)
+    private let connectButton = UIButton(type: .system)
+    private let favoriteButton = UIButton(type: .system)
+    private let editButton = UIButton(type: .system)
+    private let deleteButton = UIButton(type: .system)
 
     init(model: RebootAppModel, hostID: UUID, router: any RebootPhoneRouting) {
         self.model = model
@@ -1083,38 +1415,43 @@ final class RebootHostDetailsViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
         configureHeader()
         summaryLabel.font = .monospacedSystemFont(ofSize: 14, weight: .regular)
         summaryLabel.numberOfLines = 0
 
-        let openButton = UIButton(type: .system)
         openButton.configuration = .filled()
         openButton.configuration?.title = "Use In Connections"
         openButton.addTarget(self, action: #selector(openInConnections), for: .touchUpInside)
 
-        let connectButton = UIButton(type: .system)
         connectButton.configuration = .filled()
         connectButton.configuration?.title = "Connect Now"
         connectButton.addTarget(self, action: #selector(connectNow), for: .touchUpInside)
 
-        let favoriteButton = UIButton(type: .system)
         favoriteButton.configuration = .tinted()
         favoriteButton.configuration?.title = "Toggle Favorite"
         favoriteButton.addTarget(self, action: #selector(toggleFavorite), for: .touchUpInside)
 
-        let editButton = UIButton(type: .system)
         editButton.configuration = .plain()
         editButton.configuration?.title = "Edit Host"
         editButton.addTarget(self, action: #selector(editHost), for: .touchUpInside)
 
-        let deleteButton = UIButton(type: .system)
         deleteButton.configuration = .plain()
         deleteButton.configuration?.title = "Delete Host"
-        deleteButton.tintColor = .systemRed
         deleteButton.addTarget(self, action: #selector(deleteHost), for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [summaryLabel, connectButton, openButton, favoriteButton, editButton, deleteButton])
+        hostCardView.layer.cornerRadius = 14
+        hostCardView.layer.borderWidth = 1
+        hostCardView.translatesAutoresizingMaskIntoConstraints = false
+        hostCardView.addSubview(summaryLabel)
+        summaryLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            summaryLabel.leadingAnchor.constraint(equalTo: hostCardView.leadingAnchor, constant: 12),
+            summaryLabel.trailingAnchor.constraint(equalTo: hostCardView.trailingAnchor, constant: -12),
+            summaryLabel.topAnchor.constraint(equalTo: hostCardView.topAnchor, constant: 12),
+            summaryLabel.bottomAnchor.constraint(equalTo: hostCardView.bottomAnchor, constant: -12)
+        ])
+
+        let stack = UIStackView(arrangedSubviews: [hostCardView, connectButton, openButton, favoriteButton, editButton, deleteButton])
         stack.axis = .vertical
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -1138,6 +1475,8 @@ final class RebootHostDetailsViewController: UIViewController {
         ])
 
         refresh()
+        bindTheme()
+        applyTheme()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -1145,11 +1484,13 @@ final class RebootHostDetailsViewController: UIViewController {
         refresh()
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
     private func configureHeader() {
-        let closeButton = UIButton(type: .system)
         closeButton.configuration = .plain()
         closeButton.configuration?.image = UIImage(systemName: "chevron.left")
-        closeButton.configuration?.baseForegroundColor = .label
         closeButton.addTarget(self, action: #selector(closeScreen), for: .touchUpInside)
 
         titleLabel.text = "Host"
@@ -1241,13 +1582,55 @@ final class RebootHostDetailsViewController: UIViewController {
             self.present(prompt, animated: true)
         }
     }
+
+    private func bindTheme() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemeChange),
+            name: .adminThemeDidChange,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleThemeChange() {
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        let theme = themeManager.theme(for: traitCollection)
+        view.backgroundColor = theme.backgroundPrimary
+        closeButton.configuration?.baseForegroundColor = theme.textPrimary
+        titleLabel.textColor = theme.textPrimary
+        hostCardView.backgroundColor = theme.surfacePrimary
+        hostCardView.layer.borderColor = theme.strokeSubtle.cgColor
+        summaryLabel.textColor = theme.textPrimary
+        connectButton.configuration?.baseForegroundColor = .white
+        connectButton.configuration?.baseBackgroundColor = theme.statusSuccess
+        openButton.configuration?.baseForegroundColor = .white
+        openButton.configuration?.baseBackgroundColor = theme.accent
+        favoriteButton.configuration?.baseForegroundColor = theme.textPrimary
+        favoriteButton.configuration?.baseBackgroundColor = theme.accentMuted
+        editButton.configuration?.baseForegroundColor = theme.textPrimary
+        deleteButton.configuration?.baseForegroundColor = theme.statusError
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        applyTheme()
+    }
 }
 
 @MainActor
 final class RebootHostEditorViewController: UIViewController, UITextFieldDelegate {
     private let model: RebootAppModel
     private let existingHostID: UUID?
+    private let themeManager = AdminThemeManager.shared
 
+    private let closeButton = UIButton(type: .system)
     private let titleLabel = UILabel()
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
@@ -1258,6 +1641,8 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
     private let portField = UITextField()
     private let userField = UITextField()
     private let favoriteSwitch = UISwitch()
+    private let favoriteLabel = UILabel()
+    private let saveButton = UIButton(type: .system)
 
     init(model: RebootAppModel, existingHostID: UUID?) {
         self.model = model
@@ -1272,19 +1657,18 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
         configureChrome()
         configureFields()
         configureKeyboardHandling()
         configureContent()
         loadHostValues()
+        bindTheme()
+        applyTheme()
     }
 
     private func configureChrome() {
-        let closeButton = UIButton(type: .system)
         closeButton.configuration = .plain()
         closeButton.configuration?.image = UIImage(systemName: "chevron.left")
-        closeButton.configuration?.baseForegroundColor = .label
         closeButton.addTarget(self, action: #selector(closeScreen), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
 
@@ -1350,12 +1734,10 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
     }
 
     private func configureContent() {
-        let saveButton = UIButton(type: .system)
         saveButton.configuration = .filled()
         saveButton.configuration?.title = "Save Host"
         saveButton.addTarget(self, action: #selector(saveHost), for: .touchUpInside)
 
-        let favoriteLabel = UILabel()
         favoriteLabel.text = "Favorite"
         favoriteLabel.font = .preferredFont(forTextStyle: .body)
 
@@ -1495,24 +1877,72 @@ final class RebootHostEditorViewController: UIViewController, UITextFieldDelegat
     private func closeScreen() {
         dismiss(animated: true)
     }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    private func bindTheme() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemeChange),
+            name: .adminThemeDidChange,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleThemeChange() {
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        let theme = themeManager.theme(for: traitCollection)
+        view.backgroundColor = theme.backgroundPrimary
+        titleLabel.textColor = theme.textPrimary
+        closeButton.configuration?.baseForegroundColor = theme.textPrimary
+        saveButton.configuration?.baseForegroundColor = .white
+        saveButton.configuration?.baseBackgroundColor = theme.accent
+        favoriteLabel.textColor = theme.textSecondary
+        favoriteSwitch.onTintColor = theme.accent
+        [vaultField, nameField, noteField, hostField, portField, userField].forEach {
+            $0.backgroundColor = theme.surfaceSecondary
+            $0.textColor = theme.textPrimary
+            $0.tintColor = theme.accent
+            $0.keyboardAppearance = themeManager.resolvedStyle(for: traitCollection) == .lightOps ? .light : .dark
+        }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        applyTheme()
+    }
 }
 
 @MainActor
 final class RebootConnectionsViewController: UIViewController, UITextFieldDelegate {
     private let model: RebootAppModel
     private weak var router: (any RebootPhoneRouting)?
+    private let themeManager = AdminThemeManager.shared
 
     private let titleLabel = UILabel()
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
     private let connectBar = UIView()
+    private let connectBarSeparator = UIView()
     private let hostField = UITextField()
     private let portField = UITextField()
     private let userField = UITextField()
     private let passwordField = UITextField()
     private let connectButton = UIButton(type: .system)
+    private let disconnectButton = UIButton(type: .system)
+    private let openTerminalButton = UIButton(type: .system)
 
     private let quickHostsCard = UIView()
+    private let quickTitleLabel = UILabel()
     private let quickHostsStack = UIStackView()
     private let sessionCard = UIView()
     private let sessionHostLabel = UILabel()
@@ -1536,7 +1966,6 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 0.95, green: 0.96, blue: 0.97, alpha: 1)
         configureFormChrome()
         configureHeader()
 
@@ -1544,6 +1973,7 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         configureQuickHostsCard()
         configureSessionCard()
         configureStatusLabel()
+        bindTheme()
 
         [hostField, portField, userField, passwordField].forEach {
             $0.borderStyle = .roundedRect
@@ -1564,22 +1994,20 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         passwordField.returnKeyType = .go
         configureKeyboardAccessory()
 
-        let disconnect = UIButton(type: .system)
-        disconnect.configuration = .tinted()
-        disconnect.configuration?.title = "Disconnect"
-        disconnect.addTarget(self, action: #selector(disconnectSSH), for: .touchUpInside)
+        disconnectButton.configuration = .tinted()
+        disconnectButton.configuration?.title = "Disconnect"
+        disconnectButton.addTarget(self, action: #selector(disconnectSSH), for: .touchUpInside)
 
-        let terminal = UIButton(type: .system)
-        terminal.configuration = .plain()
-        terminal.configuration?.title = "Open Terminal"
-        terminal.addTarget(self, action: #selector(openTerminal), for: .touchUpInside)
+        openTerminalButton.configuration = .plain()
+        openTerminalButton.configuration?.title = "Open Terminal"
+        openTerminalButton.addTarget(self, action: #selector(openTerminal), for: .touchUpInside)
 
         let credentialsRow = UIStackView(arrangedSubviews: [userField, portField])
         credentialsRow.axis = .horizontal
         credentialsRow.spacing = 10
         credentialsRow.distribution = .fillEqually
 
-        let controls = UIStackView(arrangedSubviews: [disconnect, terminal])
+        let controls = UIStackView(arrangedSubviews: [disconnectButton, openTerminalButton])
         controls.axis = .horizontal
         controls.spacing = 8
         controls.distribution = .fillEqually
@@ -1613,6 +2041,7 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         )
 
         reloadQuickHosts()
+        applyTheme()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -1718,6 +2147,7 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
             }, for: .touchUpInside)
             quickHostsStack.addArrangedSubview(button)
         }
+        styleQuickHostButtons()
     }
 
     private func configureHeader() {
@@ -1773,8 +2203,8 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     }
 
     private func configureConnectBar() {
-        connectBar.backgroundColor = .white
         connectBar.layer.cornerRadius = 12
+        connectBar.layer.borderWidth = 1
         connectBar.translatesAutoresizingMaskIntoConstraints = false
 
         hostField.placeholder = "Search or \"ssh user@hostname -p port\""
@@ -1782,15 +2212,12 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
 
         connectButton.configuration = .plain()
         connectButton.configuration?.title = "CONNECT"
-        connectButton.configuration?.baseForegroundColor = .systemBlue
         connectButton.addTarget(self, action: #selector(connectSSH), for: .touchUpInside)
 
-        let line = UIView()
-        line.backgroundColor = UIColor.systemGray4
-        line.translatesAutoresizingMaskIntoConstraints = false
-        line.widthAnchor.constraint(equalToConstant: 1).isActive = true
+        connectBarSeparator.translatesAutoresizingMaskIntoConstraints = false
+        connectBarSeparator.widthAnchor.constraint(equalToConstant: 1).isActive = true
 
-        let bar = UIStackView(arrangedSubviews: [hostField, line, connectButton])
+        let bar = UIStackView(arrangedSubviews: [hostField, connectBarSeparator, connectButton])
         bar.axis = .horizontal
         bar.spacing = 10
         bar.alignment = .center
@@ -1806,18 +2233,17 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     }
 
     private func configureQuickHostsCard() {
-        quickHostsCard.backgroundColor = .white
         quickHostsCard.layer.cornerRadius = 14
+        quickHostsCard.layer.borderWidth = 1
         quickHostsCard.translatesAutoresizingMaskIntoConstraints = false
 
-        let quickTitle = UILabel()
-        quickTitle.text = "Quick Connect"
-        quickTitle.font = .preferredFont(forTextStyle: .headline)
+        quickTitleLabel.text = "Quick Connect"
+        quickTitleLabel.font = .preferredFont(forTextStyle: .headline)
 
         quickHostsStack.axis = .vertical
         quickHostsStack.spacing = 8
 
-        let quickCardStack = UIStackView(arrangedSubviews: [quickTitle, quickHostsStack])
+        let quickCardStack = UIStackView(arrangedSubviews: [quickTitleLabel, quickHostsStack])
         quickCardStack.axis = .vertical
         quickCardStack.spacing = 10
         quickCardStack.translatesAutoresizingMaskIntoConstraints = false
@@ -1831,22 +2257,19 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     }
 
     private func configureSessionCard() {
-        sessionCard.backgroundColor = UIColor(red: 0.10, green: 0.11, blue: 0.19, alpha: 1)
         sessionCard.layer.cornerRadius = 14
+        sessionCard.layer.borderWidth = 1
         sessionCard.translatesAutoresizingMaskIntoConstraints = false
 
         sessionHostLabel.font = .systemFont(ofSize: 17, weight: .semibold)
-        sessionHostLabel.textColor = .white
         sessionHostLabel.text = "No Active Session"
 
         sessionStateLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        sessionStateLabel.textColor = UIColor(red: 0.45, green: 0.82, blue: 0.52, alpha: 1)
         sessionStateLabel.text = "Idle"
 
         sessionPreviewView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        sessionPreviewView.textColor = UIColor(red: 0.39, green: 0.85, blue: 0.96, alpha: 1)
-        sessionPreviewView.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.14, alpha: 1)
         sessionPreviewView.layer.cornerRadius = 10
+        sessionPreviewView.layer.borderWidth = 1
         sessionPreviewView.isEditable = false
         sessionPreviewView.text = "Terminal output will appear here."
         sessionPreviewView.textContainerInset = UIEdgeInsets(top: 10, left: 8, bottom: 10, right: 8)
@@ -1873,15 +2296,16 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     private func configureStatusLabel() {
         statusLabel.numberOfLines = 0
         statusLabel.font = .preferredFont(forTextStyle: .footnote)
-        statusLabel.textColor = .secondaryLabel
         statusLabel.text = "Ready"
     }
 
     private func render(_ state: TerminalSurfaceState) {
+        let theme = themeManager.theme(for: traitCollection)
         statusLabel.text = "\(state.connectionTitle) • \(state.sessionState.rawValue.capitalized) • \(state.statusMessage)"
         sessionHostLabel.text = state.connectionTitle.isEmpty ? "No Active Session" : state.connectionTitle
         sessionStateLabel.text = state.sessionState.rawValue.capitalized
         sessionPreviewView.text = String(state.transcript.suffix(1200))
+        sessionStateLabel.textColor = color(for: state.sessionState, theme: theme)
 
         switch state.sessionState {
         case .failed:
@@ -1912,6 +2336,89 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         guard !didAutoOpenTerminal else { return }
         didAutoOpenTerminal = true
         openTerminal()
+    }
+
+    private func bindTheme() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemeChange),
+            name: .adminThemeDidChange,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleThemeChange() {
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        let theme = themeManager.theme(for: traitCollection)
+        view.backgroundColor = theme.backgroundPrimary
+        titleLabel.textColor = theme.textPrimary
+        connectBar.backgroundColor = theme.surfacePrimary
+        connectBar.layer.borderColor = theme.strokeSubtle.cgColor
+        connectBarSeparator.backgroundColor = theme.strokeSubtle
+        quickHostsCard.backgroundColor = theme.surfacePrimary
+        quickHostsCard.layer.borderColor = theme.strokeSubtle.cgColor
+        quickTitleLabel.textColor = theme.textPrimary
+        sessionCard.backgroundColor = theme.surfacePrimary
+        sessionCard.layer.borderColor = theme.strokeSubtle.cgColor
+        sessionHostLabel.textColor = theme.textPrimary
+        sessionPreviewView.backgroundColor = theme.surfaceSecondary
+        sessionPreviewView.textColor = theme.accent
+        sessionPreviewView.layer.borderColor = theme.strokeSubtle.cgColor
+        statusLabel.textColor = theme.textSecondary
+        connectButton.configuration?.baseForegroundColor = theme.accent
+        disconnectButton.configuration?.baseForegroundColor = theme.statusError
+        disconnectButton.configuration?.baseBackgroundColor = theme.statusError.withAlphaComponent(0.14)
+        openTerminalButton.configuration?.baseForegroundColor = theme.textPrimary
+        [hostField, portField, userField, passwordField].forEach {
+            $0.backgroundColor = theme.surfaceSecondary
+            $0.textColor = theme.textPrimary
+            $0.tintColor = theme.accent
+            $0.keyboardAppearance = selectedKeyboardAppearance()
+        }
+        styleQuickHostButtons()
+    }
+
+    private func selectedKeyboardAppearance() -> UIKeyboardAppearance {
+        let resolved = themeManager.resolvedStyle(for: traitCollection)
+        return resolved == .lightOps ? .light : .dark
+    }
+
+    private func styleQuickHostButtons() {
+        let theme = themeManager.theme(for: traitCollection)
+        for subview in quickHostsStack.arrangedSubviews {
+            if let button = subview as? UIButton {
+                button.configuration?.baseForegroundColor = theme.textPrimary
+                button.configuration?.baseBackgroundColor = theme.surfaceSecondary
+                button.configuration?.background.cornerRadius = 10
+            } else if let label = subview as? UILabel {
+                label.textColor = theme.textSecondary
+            }
+        }
+    }
+
+    private func color(for state: TerminalConnectionState, theme: AdminTheme) -> UIColor {
+        switch state {
+        case .connected:
+            return theme.statusSuccess
+        case .connecting:
+            return theme.statusWarning
+        case .failed:
+            return theme.statusError
+        case .idle:
+            return theme.textSecondary
+        }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        applyTheme()
     }
 
     private func configureFormChrome() {
@@ -1966,6 +2473,7 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
 final class RebootPasswordPromptViewController: UIViewController, UITextFieldDelegate {
     private let hostName: String
     private let onConnect: (String) -> Void
+    private let themeManager = AdminThemeManager.shared
 
     private let dimView = UIView()
     private let cardView = UIView()
@@ -1991,6 +2499,8 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
         view.backgroundColor = .clear
         configureLayout()
         configureKeyboardDismissTap()
+        bindTheme()
+        applyTheme()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -1999,22 +2509,19 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
     }
 
     private func configureLayout() {
-        dimView.backgroundColor = UIColor.black.withAlphaComponent(0.42)
         dimView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(dimView)
 
-        cardView.backgroundColor = .secondarySystemBackground
         cardView.layer.cornerRadius = 18
+        cardView.layer.borderWidth = 1
         cardView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(cardView)
 
         titleLabel.text = "Connect \(hostName)"
         titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
-        titleLabel.textColor = .label
 
         subtitleLabel.text = "Enter SSH password"
         subtitleLabel.font = .preferredFont(forTextStyle: .subheadline)
-        subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 0
 
         passwordField.borderStyle = .roundedRect
@@ -2096,17 +2603,63 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
         connectTapped()
         return true
     }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    private func bindTheme() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemeChange),
+            name: .adminThemeDidChange,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleThemeChange() {
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        let theme = themeManager.theme(for: traitCollection)
+        dimView.backgroundColor = UIColor.black.withAlphaComponent(themeManager.resolvedStyle(for: traitCollection) == .lightOps ? 0.30 : 0.46)
+        cardView.backgroundColor = theme.surfacePrimary
+        cardView.layer.borderColor = theme.strokeSubtle.cgColor
+        titleLabel.textColor = theme.textPrimary
+        subtitleLabel.textColor = theme.textSecondary
+        passwordField.backgroundColor = theme.surfaceSecondary
+        passwordField.textColor = theme.textPrimary
+        passwordField.tintColor = theme.accent
+        passwordField.keyboardAppearance = themeManager.resolvedStyle(for: traitCollection) == .lightOps ? .light : .dark
+        cancelButton.configuration?.baseForegroundColor = theme.textPrimary
+        cancelButton.configuration?.baseBackgroundColor = theme.surfaceSecondary
+        connectButton.configuration?.baseForegroundColor = .white
+        connectButton.configuration?.baseBackgroundColor = theme.accent
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        applyTheme()
+    }
 }
 
 @MainActor
 final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     private let model: RebootAppModel
+    private let themeManager = AdminThemeManager.shared
+    private let closeButton = UIButton(type: .system)
     private let titleLabel = UILabel()
     private let outputView = UITextView()
     private let sessionRow = UIStackView()
     private let previousCommandButton = UIButton(type: .system)
     private let activeSessionButton = UIButton(type: .system)
     private let sessionActionsButton = UIButton(type: .system)
+    private let bottomStack = UIStackView()
     private let shortcutsScrollView = UIScrollView()
     private let shortcutsRow = UIStackView()
     private let keyboardInputField = RebootTerminalInputProxyView()
@@ -2131,15 +2684,14 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(red: 0.07, green: 0.08, blue: 0.13, alpha: 1)
         configureHeader()
+        bindTheme()
 
         outputView.isEditable = false
         outputView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        outputView.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.12, alpha: 1)
-        outputView.textColor = UIColor(red: 0.90, green: 0.92, blue: 0.96, alpha: 1)
-        outputView.layer.cornerRadius = 6
-        outputView.textContainerInset = .zero
+        outputView.layer.cornerRadius = 10
+        outputView.layer.borderWidth = 1
+        outputView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         outputView.textContainer.lineFragmentPadding = 0
         outputView.textContainer.lineBreakMode = .byCharWrapping
         outputView.translatesAutoresizingMaskIntoConstraints = false
@@ -2152,8 +2704,8 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         shortcutsScrollView.showsHorizontalScrollIndicator = false
         shortcutsScrollView.alwaysBounceHorizontal = true
         shortcutsScrollView.alwaysBounceVertical = false
-        shortcutsScrollView.backgroundColor = UIColor(red: 0.10, green: 0.12, blue: 0.20, alpha: 1)
         shortcutsScrollView.layer.cornerRadius = 12
+        shortcutsScrollView.layer.borderWidth = 1
 
         shortcutsRow.axis = .horizontal
         shortcutsRow.spacing = 8
@@ -2201,7 +2753,8 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
 
         configureSessionRow()
 
-        let bottomStack = UIStackView(arrangedSubviews: [sessionRow, shortcutsScrollView])
+        bottomStack.addArrangedSubview(sessionRow)
+        bottomStack.addArrangedSubview(shortcutsScrollView)
         bottomStack.axis = .vertical
         bottomStack.spacing = 8
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
@@ -2241,6 +2794,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
             keyboardInputField.widthAnchor.constraint(equalToConstant: 1),
             keyboardInputField.heightAnchor.constraint(equalToConstant: 1)
         ])
+        applyTheme()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -2270,6 +2824,10 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
             model.removeTerminalObserver(id: terminalObserverID)
             self.terminalObserverID = nil
         }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     private func render(state: TerminalSurfaceState) {
@@ -2492,8 +3050,6 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     private func styleSessionButton(_ button: UIButton, title: String) {
         button.configuration = .filled()
         button.configuration?.title = title
-        button.configuration?.baseForegroundColor = UIColor(red: 0.92, green: 0.95, blue: 1.0, alpha: 1)
-        button.configuration?.baseBackgroundColor = UIColor(red: 0.22, green: 0.25, blue: 0.39, alpha: 1)
         button.configuration?.cornerStyle = .large
         button.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
         button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
@@ -2686,8 +3242,6 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         let button = UIButton(type: .system)
         button.configuration = .filled()
         button.configuration?.title = title
-        button.configuration?.baseForegroundColor = UIColor(red: 0.69, green: 0.78, blue: 0.94, alpha: 1)
-        button.configuration?.baseBackgroundColor = UIColor(red: 0.13, green: 0.22, blue: 0.43, alpha: 1)
         button.configuration?.cornerStyle = .capsule
         button.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
         button.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
@@ -2717,16 +3271,13 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     }
 
     private func configureHeader() {
-        let closeButton = UIButton(type: .system)
         closeButton.configuration = .plain()
         closeButton.configuration?.image = UIImage(systemName: "chevron.left")
-        closeButton.configuration?.baseForegroundColor = .white
         closeButton.addTarget(self, action: #selector(closeScreen), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
 
         titleLabel.text = "Terminal"
         titleLabel.font = .systemFont(ofSize: 18, weight: .medium)
-        titleLabel.textColor = .white
         titleLabel.numberOfLines = 1
         titleLabel.adjustsFontSizeToFitWidth = true
         titleLabel.minimumScaleFactor = 0.75
@@ -2746,6 +3297,62 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         ])
     }
 
+    private func bindTheme() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemeChange),
+            name: .adminThemeDidChange,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleThemeChange() {
+        applyTheme()
+    }
+
+    private func applyTheme() {
+        let theme = themeManager.theme(for: traitCollection)
+        view.backgroundColor = theme.backgroundPrimary
+        closeButton.configuration?.baseForegroundColor = theme.textPrimary
+        titleLabel.textColor = theme.textPrimary
+        outputView.backgroundColor = theme.surfaceSecondary
+        outputView.textColor = theme.textPrimary
+        outputView.layer.borderColor = theme.strokeSubtle.cgColor
+        shortcutsScrollView.backgroundColor = theme.surfacePrimary
+        shortcutsScrollView.layer.borderColor = theme.strokeSubtle.cgColor
+        keyboardInputField.keyboardAppearance = themeManager.resolvedStyle(for: traitCollection) == .lightOps ? .light : .dark
+        styleSessionControls(for: theme)
+        styleSoftKeyButtons(for: theme)
+    }
+
+    private func styleSessionControls(for theme: AdminTheme) {
+        previousCommandButton.configuration?.baseForegroundColor = theme.textPrimary
+        previousCommandButton.configuration?.baseBackgroundColor = theme.surfacePrimary
+        activeSessionButton.configuration?.baseForegroundColor = theme.textPrimary
+        activeSessionButton.configuration?.baseBackgroundColor = theme.surfacePrimary
+        sessionActionsButton.configuration?.baseForegroundColor = theme.accent
+        sessionActionsButton.configuration?.baseBackgroundColor = theme.accentMuted
+    }
+
+    private func styleSoftKeyButtons(for theme: AdminTheme) {
+        for arrangedSubview in shortcutsRow.arrangedSubviews {
+            guard let button = arrangedSubview as? UIButton else {
+                continue
+            }
+            button.configuration?.baseForegroundColor = theme.textPrimary
+            button.configuration?.baseBackgroundColor = theme.surfaceSecondary
+        }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        applyTheme()
+    }
+
     @objc
     private func closeScreen() {
         dismiss(animated: true)
@@ -2755,6 +3362,10 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
 @MainActor
 final class RebootProfileViewController: UIViewController {
     private let model: RebootAppModel
+    private let themeManager = AdminThemeManager.shared
+    private let summaryLabel = UILabel()
+    private let themeTitleLabel = UILabel()
+    private let themeControl = UISegmentedControl(items: AdminThemeStyle.allCases.map(\.title))
 
     init(model: RebootAppModel) {
         self.model = model
@@ -2769,24 +3380,94 @@ final class RebootProfileViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Profile"
-        view.backgroundColor = .systemBackground
-
-        let label = UILabel()
-        label.numberOfLines = 0
-        label.font = .preferredFont(forTextStyle: .body)
-        label.text = """
+        summaryLabel.numberOfLines = 0
+        summaryLabel.font = .preferredFont(forTextStyle: .body)
+        summaryLabel.text = """
         Termius Reboot
         Mobile-first mode.
         External monitor mirroring is planned for Phase 3 after phone flow stabilization.
         Hosts in storage: \(model.hostStore.hosts.count)
         """
+        summaryLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        label.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(label)
+        themeTitleLabel.text = "Appearance Theme"
+        themeTitleLabel.font = .preferredFont(forTextStyle: .headline)
+        themeTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        themeControl.selectedSegmentIndex = AdminThemeStyle.allCases.firstIndex(of: themeManager.selectedStyle) ?? 0
+        themeControl.addTarget(self, action: #selector(themeChanged(_:)), for: .valueChanged)
+        themeControl.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(summaryLabel)
+        view.addSubview(themeTitleLabel)
+        view.addSubview(themeControl)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            label.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            label.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16)
+            summaryLabel.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            summaryLabel.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            summaryLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+
+            themeTitleLabel.leadingAnchor.constraint(equalTo: summaryLabel.leadingAnchor),
+            themeTitleLabel.topAnchor.constraint(equalTo: summaryLabel.bottomAnchor, constant: 28),
+            themeTitleLabel.trailingAnchor.constraint(equalTo: summaryLabel.trailingAnchor),
+
+            themeControl.leadingAnchor.constraint(equalTo: summaryLabel.leadingAnchor),
+            themeControl.trailingAnchor.constraint(equalTo: summaryLabel.trailingAnchor),
+            themeControl.topAnchor.constraint(equalTo: themeTitleLabel.bottomAnchor, constant: 10)
         ])
+        bindTheme()
+        applyTheme()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    private func bindTheme() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThemeChange),
+            name: .adminThemeDidChange,
+            object: nil
+        )
+    }
+
+    @objc
+    private func handleThemeChange() {
+        syncThemeControl()
+        applyTheme()
+    }
+
+    private func syncThemeControl() {
+        themeControl.selectedSegmentIndex = AdminThemeStyle.allCases.firstIndex(of: themeManager.selectedStyle) ?? 0
+    }
+
+    private func applyTheme() {
+        let theme = themeManager.theme(for: traitCollection)
+        view.backgroundColor = theme.backgroundPrimary
+        summaryLabel.textColor = theme.textPrimary
+        themeTitleLabel.textColor = theme.textSecondary
+        themeControl.selectedSegmentTintColor = theme.accent
+        themeControl.backgroundColor = theme.surfacePrimary
+        let normalAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: theme.textSecondary]
+        let selectedAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor.white]
+        themeControl.setTitleTextAttributes(normalAttrs, for: .normal)
+        themeControl.setTitleTextAttributes(selectedAttrs, for: .selected)
+    }
+
+    @objc
+    private func themeChanged(_ control: UISegmentedControl) {
+        guard AdminThemeStyle.allCases.indices.contains(control.selectedSegmentIndex) else {
+            return
+        }
+        let style = AdminThemeStyle.allCases[control.selectedSegmentIndex]
+        themeManager.set(style: style)
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+        applyTheme()
     }
 }
