@@ -32,6 +32,7 @@ private final class RebootExternalMirrorViewController: UIViewController {
     private let outputView = UITextView()
     private var terminalObserverID: UUID?
     private var lastAppliedTerminalSize: TerminalSize?
+    private let terminalCursorGlyph = "▏"
 
     init(model: RebootAppModel) {
         self.model = model
@@ -91,7 +92,10 @@ private final class RebootExternalMirrorViewController: UIViewController {
     }
 
     private func render(_ state: TerminalSurfaceState) {
-        outputView.text = state.transcript.isEmpty ? state.statusMessage : state.transcript
+        let cursorSuffix = state.sessionState == .connected ? terminalCursorGlyph : ""
+        outputView.text = state.transcript.isEmpty
+            ? state.statusMessage
+            : state.transcript + cursorSuffix
         applyTerminalGeometryIfNeeded()
 
         let maxOffsetY = max(

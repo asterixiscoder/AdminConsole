@@ -200,6 +200,7 @@ final class RebootAppModel {
     let hostStore = RebootHostStore()
     var selectedHostID: UUID?
     private let credentialStore = SSHCredentialStore()
+    private let minimumTerminalColumns = 120
 
     private final class TerminalSessionSlot {
         let id: UUID
@@ -207,12 +208,14 @@ final class RebootAppModel {
         let runtime: SSHTerminalRuntime
         var state: TerminalSurfaceState
         var backgroundReconnectHostID: UUID?
+        var didApplySingleColumnBootstrap: Bool
 
         init(id: UUID, runtime: SSHTerminalRuntime, state: TerminalSurfaceState) {
             self.id = id
             self.runtime = runtime
             self.state = state
             self.backgroundReconnectHostID = nil
+            self.didApplySingleColumnBootstrap = false
         }
     }
 
@@ -224,6 +227,7 @@ final class RebootAppModel {
     private var controlTerminalSize: TerminalSize?
     private var externalMirrorTerminalSize: TerminalSize?
     private var appliedTerminalSizeBySession: [UUID: TerminalSize] = [:]
+    private var appliedShellSizeBySession: [UUID: TerminalSize] = [:]
 
     init() {
         _ = createTerminalSession(makeActive: true)
@@ -491,25 +495,47 @@ final class RebootAppModel {
         }
         appliedTerminalSizeBySession[activeSessionID] = targetSize
 
+        let runtime = slot.runtime
+        let shouldSyncShell = slot.state.sessionState == .connected
+        let shouldApplyStty = appliedShellSizeBySession[activeSessionID] != targetSize
+        if shouldSyncShell && shouldApplyStty {
+            appliedShellSizeBySession[activeSessionID] = targetSize
+        }
+
         Task {
-            await slot.runtime.resize(to: targetSize)
+            await runtime.resize(to: targetSize)
+            if shouldSyncShell && shouldApplyStty {
+                // Some remote shells lag behind PTY window-change events.
+                // Keep COLUMNS/ROWS in sync explicitly to avoid narrow wrapping.
+                try? await runtime.send(text: "stty cols \(targetSize.columns) rows \(targetSize.rows) >/dev/null 2>&1 || true\n")
+            }
         }
     }
 
     private var resolvedTerminalSize: TerminalSize? {
         switch (controlTerminalSize, externalMirrorTerminalSize) {
         case let (control?, external?):
-            // External display should not be constrained by phone layout.
+            // Use the widest active surface so shell output fills available width.
             return TerminalSize(
-                columns: max(control.columns, external.columns),
+                columns: max(minimumTerminalColumns, max(control.columns, external.columns)),
                 rows: max(control.rows, external.rows),
                 pixelWidth: max(control.pixelWidth, external.pixelWidth),
                 pixelHeight: max(control.pixelHeight, external.pixelHeight)
             )
         case let (control?, nil):
-            return control
+            return TerminalSize(
+                columns: max(minimumTerminalColumns, control.columns),
+                rows: control.rows,
+                pixelWidth: control.pixelWidth,
+                pixelHeight: control.pixelHeight
+            )
         case let (nil, external?):
-            return external
+            return TerminalSize(
+                columns: max(minimumTerminalColumns, external.columns),
+                rows: external.rows,
+                pixelWidth: external.pixelWidth,
+                pixelHeight: external.pixelHeight
+            )
         case (nil, nil):
             return nil
         }
@@ -531,7 +557,24 @@ final class RebootAppModel {
         guard let slot = terminalSessions[sessionID] else {
             return
         }
+        let previousSessionState = slot.state.sessionState
         slot.state = state
+
+        if state.sessionState != .connected {
+            slot.didApplySingleColumnBootstrap = false
+            appliedTerminalSizeBySession[sessionID] = nil
+            appliedShellSizeBySession[sessionID] = nil
+        } else if previousSessionState != .connected && !slot.didApplySingleColumnBootstrap {
+            slot.didApplySingleColumnBootstrap = true
+            Task {
+                // Force one-column directory listings for Termius-like readability.
+                try? await slot.runtime.send(text: "alias ls='ls -1' 2>/dev/null || true\n")
+            }
+            if sessionID == activeTerminalSessionID {
+                applyEffectiveTerminalResize()
+            }
+        }
+
         if sessionID != activeTerminalSessionID {
             return
         }
@@ -2074,6 +2117,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     private var currentInputBuffer = ""
     private var commandHistory: [String] = []
     private var historyCursor: Int?
+    private let terminalCursorGlyph = "▏"
 
     init(model: RebootAppModel) {
         self.model = model
@@ -2095,7 +2139,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         outputView.backgroundColor = UIColor(red: 0.06, green: 0.07, blue: 0.12, alpha: 1)
         outputView.textColor = UIColor(red: 0.90, green: 0.92, blue: 0.96, alpha: 1)
         outputView.layer.cornerRadius = 6
-        outputView.textContainerInset = UIEdgeInsets(top: 4, left: 1, bottom: 4, right: 1)
+        outputView.textContainerInset = .zero
         outputView.textContainer.lineFragmentPadding = 0
         outputView.textContainer.lineBreakMode = .byCharWrapping
         outputView.translatesAutoresizingMaskIntoConstraints = false
@@ -2181,8 +2225,8 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         view.addSubview(bottomStack)
         view.addSubview(keyboardInputField)
         NSLayoutConstraint.activate([
-            outputView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 4),
-            outputView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -4),
+            outputView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 0),
+            outputView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: 0),
             outputView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
             outputView.bottomAnchor.constraint(equalTo: bottomStack.topAnchor, constant: -16),
 
@@ -2234,11 +2278,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         applySessionStatus(state.sessionState)
         let shouldScrollToBottom = isFollowingTail && !isInteractingWithTerminalScroll
         let currentOffset = outputView.contentOffset
-        let transcript = state.transcript
-        let cursorSuffix = state.sessionState == .connected ? "█" : ""
-        let renderedText = transcript.isEmpty
-            ? state.statusMessage
-            : transcript + cursorSuffix
+        let renderedText = renderableTerminalText(for: state)
         outputView.text = renderedText
         if shouldScrollToBottom {
             scrollOutputToBottom()
@@ -2254,6 +2294,33 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
             )
             outputView.setContentOffset(restoredOffset, animated: false)
         }
+    }
+
+    private func renderableTerminalText(for state: TerminalSurfaceState) -> String {
+        guard !state.transcript.isEmpty else {
+            return state.statusMessage
+        }
+
+        guard state.sessionState == .connected,
+              state.buffer.cursor.isVisible,
+              !state.buffer.styledLines.isEmpty else {
+            return state.transcript
+        }
+
+        var lines = state.transcript
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        guard !lines.isEmpty else {
+            return state.transcript
+        }
+
+        let cursor = state.buffer.cursor
+        let row = max(0, min(state.buffer.styledLines.count - 1, cursor.row))
+        let cells = state.buffer.styledLines[row].cells
+        let prefixCount = max(0, min(cells.count, cursor.column))
+        let livePrefix = cells.prefix(prefixCount).map(\.character).joined()
+        lines[lines.count - 1] = livePrefix + terminalCursorGlyph
+        return lines.joined(separator: "\n")
     }
 
     @objc
@@ -2580,10 +2647,12 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         let usableHeight = max(0, outputView.bounds.height - insets.top - insets.bottom)
         // Slightly bias toward wider usable cols: UIKit text metrics tend to
         // overestimate mono glyph advance for terminal PTY sizing.
-        let glyphWidth = max(3.5, measuredMonospaceGlyphWidth(for: font) * 0.82)
+        // Strong bias toward higher COLUMNS so shell-side wrapping doesn't happen too early.
+        // We prefer visual wrap in UITextView over early server-side hard wraps.
+        let glyphWidth = max(2.0, measuredMonospaceGlyphWidth(for: font) * 0.46)
         let rowHeight = max(10.0, font.lineHeight)
 
-        let columns = Int(floor(usableWidth / glyphWidth)) + 1
+        let columns = Int(floor(usableWidth / glyphWidth)) + 20
         let rows = Int(floor(usableHeight / rowHeight))
         let screenScale = view.window?.screen.scale ?? UIScreen.main.scale
         let terminalSize = TerminalSize(
