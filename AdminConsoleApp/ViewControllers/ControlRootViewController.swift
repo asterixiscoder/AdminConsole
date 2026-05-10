@@ -132,11 +132,79 @@ final class AdminThemeManager {
 }
 
 final class RebootTerminalInputProxyView: UIView, UIKeyInput {
+    enum ControlSequence {
+        static let escape = "\u{1B}"
+        static let tab = "\t"
+        static let shiftTab = "\u{1B}[Z"
+        static let ctrlC = "\u{3}"
+        static let ctrlBackslash = "\u{1C}"
+        static let up = "\u{1B}[A"
+        static let down = "\u{1B}[B"
+        static let right = "\u{1B}[C"
+        static let left = "\u{1B}[D"
+        static let appUp = "\u{1B}OA"
+        static let appDown = "\u{1B}OB"
+        static let appRight = "\u{1B}OC"
+        static let appLeft = "\u{1B}OD"
+        static let home = "\u{1B}[H"
+        static let end = "\u{1B}[F"
+        static let appHome = "\u{1B}OH"
+        static let appEnd = "\u{1B}OF"
+        static let insert = "\u{1B}[2~"
+        static let delete = "\u{1B}[3~"
+        static let backspace = "\u{8}"
+        static let deleteBackward = "\u{7F}"
+        static let pageUp = "\u{1B}[5~"
+        static let pageDown = "\u{1B}[6~"
+        static let f1 = "\u{1B}OP"
+        static let f2 = "\u{1B}OQ"
+        static let f3 = "\u{1B}OR"
+        static let f4 = "\u{1B}OS"
+        static let f5 = "\u{1B}[15~"
+        static let f6 = "\u{1B}[17~"
+        static let f7 = "\u{1B}[18~"
+        static let f8 = "\u{1B}[19~"
+        static let f9 = "\u{1B}[20~"
+        static let f10 = "\u{1B}[21~"
+        static let f11 = "\u{1B}[23~"
+        static let f12 = "\u{1B}[24~"
+    }
+
     var onInsertText: ((String) -> Void)?
     var onDeleteBackward: (() -> Void)?
+    var onControlSequence: ((String) -> Void)?
 
     override var canBecomeFirstResponder: Bool {
         true
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        [
+            command(UIKeyCommand.inputUpArrow, [], ControlSequence.up, #selector(sendUp)),
+            command(UIKeyCommand.inputDownArrow, [], ControlSequence.down, #selector(sendDown)),
+            command(UIKeyCommand.inputLeftArrow, [], ControlSequence.left, #selector(sendLeft)),
+            command(UIKeyCommand.inputRightArrow, [], ControlSequence.right, #selector(sendRight)),
+            command(UIKeyCommand.inputEscape, [], ControlSequence.escape, #selector(sendEscape)),
+            command("\t", [], ControlSequence.tab, #selector(sendTab)),
+            command("\t", [.shift], ControlSequence.shiftTab, #selector(sendShiftTab)),
+            command(UIKeyCommand.inputPageUp, [], ControlSequence.pageUp, #selector(sendPageUp)),
+            command(UIKeyCommand.inputPageDown, [], ControlSequence.pageDown, #selector(sendPageDown)),
+            command(UIKeyCommand.inputHome, [], ControlSequence.home, #selector(sendHome)),
+            command(UIKeyCommand.inputEnd, [], ControlSequence.end, #selector(sendEnd)),
+            deleteCommand(ControlSequence.backspace, #selector(sendBackspace)),
+            deleteCommand(ControlSequence.deleteBackward, #selector(sendBackspace)),
+            command("c", [.control], ControlSequence.ctrlC, #selector(sendCtrlC)),
+            command("1", [.command], ControlSequence.f1, #selector(sendF1)),
+            command("2", [.command], ControlSequence.f2, #selector(sendF2)),
+            command("3", [.command], ControlSequence.f3, #selector(sendF3)),
+            command("4", [.command], ControlSequence.f4, #selector(sendF4)),
+            command("5", [.command], ControlSequence.f5, #selector(sendF5)),
+            command("6", [.command], ControlSequence.f6, #selector(sendF6)),
+            command("7", [.command], ControlSequence.f7, #selector(sendF7)),
+            command("8", [.command], ControlSequence.f8, #selector(sendF8)),
+            command("9", [.command], ControlSequence.f9, #selector(sendF9)),
+            command("0", [.command], ControlSequence.f10, #selector(sendF10))
+        ]
     }
 
     // Keep deletion key active for terminal semantics (delete should always emit DEL).
@@ -169,6 +237,59 @@ final class RebootTerminalInputProxyView: UIView, UIKeyInput {
 
     @available(iOS 17.0, *)
     var inlinePredictionType: UITextInlinePredictionType = .no
+
+    private func command(
+        _ input: String,
+        _ modifiers: UIKeyModifierFlags,
+        _ sequence: String,
+        _ action: Selector
+    ) -> UIKeyCommand {
+        let command = UIKeyCommand(
+            title: "",
+            action: action,
+            input: input,
+            modifierFlags: modifiers,
+            propertyList: sequence
+        )
+        command.wantsPriorityOverSystemBehavior = true
+        return command
+    }
+
+    private func emit(_ sender: UIKeyCommand) {
+        if let sequence = sender.propertyList as? String {
+            onControlSequence?(sequence)
+        }
+    }
+
+    private func deleteCommand(_ input: String, _ action: Selector) -> UIKeyCommand {
+        let command = UIKeyCommand(input: input, modifierFlags: [], action: action)
+        command.wantsPriorityOverSystemBehavior = true
+        return command
+    }
+
+    @objc private func sendUp(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendDown(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendLeft(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendRight(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendEscape(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendTab(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendShiftTab(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendPageUp(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendPageDown(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendHome(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendEnd(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendBackspace(_ sender: UIKeyCommand) { onDeleteBackward?() }
+    @objc private func sendCtrlC(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF1(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF2(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF3(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF4(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF5(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF6(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF7(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF8(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF9(_ sender: UIKeyCommand) { emit(sender) }
+    @objc private func sendF10(_ sender: UIKeyCommand) { emit(sender) }
 }
 
 struct RebootHost: Codable, Equatable, Identifiable {
@@ -323,7 +444,7 @@ final class RebootAppModel {
     let hostStore = RebootHostStore()
     var selectedHostID: UUID?
     private let credentialStore = SSHCredentialStore()
-    private let minimumTerminalColumns = 120
+    private let minimumTerminalColumns = 40
 
     private final class TerminalSessionSlot {
         let id: UUID
@@ -604,6 +725,10 @@ final class RebootAppModel {
         applyEffectiveTerminalResize()
     }
 
+    func isExternalMirrorConnected() -> Bool {
+        externalMirrorTerminalSize != nil
+    }
+
     private func applyEffectiveTerminalResize() {
         guard let activeSessionID = activeTerminalSessionID,
               let slot = terminalSessions[activeSessionID] else {
@@ -636,28 +761,27 @@ final class RebootAppModel {
     }
 
     private var resolvedTerminalSize: TerminalSize? {
+        let isAlternateScreen = terminalState.buffer.isAlternateScreenActive
+        let minimumColumnsForMode = isAlternateScreen ? 80 : minimumTerminalColumns
+        let minimumRowsForMode = isAlternateScreen ? 24 : 18
+        let maximumColumnsForMode = isAlternateScreen ? 320 : 160
+        let maximumRowsForMode = isAlternateScreen ? 160 : 120
+
         switch (controlTerminalSize, externalMirrorTerminalSize) {
-        case let (control?, external?):
-            // Use the widest active surface so shell output fills available width.
+        case let (_, external?):
+            // External display is authoritative while connected.
             return TerminalSize(
-                columns: max(minimumTerminalColumns, max(control.columns, external.columns)),
-                rows: max(control.rows, external.rows),
-                pixelWidth: max(control.pixelWidth, external.pixelWidth),
-                pixelHeight: max(control.pixelHeight, external.pixelHeight)
+                columns: min(maximumColumnsForMode, max(minimumColumnsForMode, external.columns)),
+                rows: min(maximumRowsForMode, max(minimumRowsForMode, external.rows)),
+                pixelWidth: external.pixelWidth,
+                pixelHeight: external.pixelHeight
             )
         case let (control?, nil):
             return TerminalSize(
-                columns: max(minimumTerminalColumns, control.columns),
-                rows: control.rows,
+                columns: min(maximumColumnsForMode, max(minimumColumnsForMode, control.columns)),
+                rows: min(maximumRowsForMode, max(minimumRowsForMode, control.rows)),
                 pixelWidth: control.pixelWidth,
                 pixelHeight: control.pixelHeight
-            )
-        case let (nil, external?):
-            return TerminalSize(
-                columns: max(minimumTerminalColumns, external.columns),
-                rows: external.rows,
-                pixelWidth: external.pixelWidth,
-                pixelHeight: external.pixelHeight
             )
         case (nil, nil):
             return nil
@@ -681,6 +805,7 @@ final class RebootAppModel {
             return
         }
         let previousSessionState = slot.state.sessionState
+        let previousAlternateScreen = slot.state.buffer.isAlternateScreenActive
         slot.state = state
 
         if state.sessionState != .connected {
@@ -703,6 +828,16 @@ final class RebootAppModel {
         }
 
         terminalState = state
+
+        // Re-evaluate effective terminal geometry when switching between normal
+        // and alternate screen buffers so external display width can become
+        // authoritative for full-screen TUI apps (mc/vim/htop), and switch
+        // back to control-surface geometry on exit.
+        if previousAlternateScreen != state.buffer.isAlternateScreenActive {
+            appliedTerminalSizeBySession[sessionID] = nil
+            applyEffectiveTerminalResize()
+        }
+
         for observer in terminalObservers.values {
             observer(state)
         }
@@ -2650,6 +2785,26 @@ final class RebootPasswordPromptViewController: UIViewController, UITextFieldDel
 
 @MainActor
 final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
+    private struct ViewportState {
+        var offsetX: CGFloat = 0
+        var offsetY: CGFloat = 0
+        var isUserPanning = false
+        var stickToBottom = false
+        var stickToRight = false
+    }
+
+    private enum ShortcutPanelMode {
+        case primary
+        case function
+    }
+
+    private enum ShortcutAction {
+        case sequence(String)
+        case copy
+        case paste
+        case toggleFn
+    }
+
     private let model: RebootAppModel
     private let themeManager = AdminThemeManager.shared
     private let closeButton = UIButton(type: .system)
@@ -2667,10 +2822,31 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     private var lastAppliedTerminalSize: TerminalSize?
     private var isFollowingTail = true
     private var isInteractingWithTerminalScroll = false
+    private var alternateViewportState = ViewportState()
+    private var latestTerminalState: TerminalSurfaceState?
+    private var lastRenderedAlternateScreen = false
+    private let functionKeyMap: [UIKeyboardHIDUsage: String] = [
+        .keyboardF1: RebootTerminalInputProxyView.ControlSequence.f1,
+        .keyboardF2: RebootTerminalInputProxyView.ControlSequence.f2,
+        .keyboardF3: RebootTerminalInputProxyView.ControlSequence.f3,
+        .keyboardF4: RebootTerminalInputProxyView.ControlSequence.f4,
+        .keyboardF5: RebootTerminalInputProxyView.ControlSequence.f5,
+        .keyboardF6: RebootTerminalInputProxyView.ControlSequence.f6,
+        .keyboardF7: RebootTerminalInputProxyView.ControlSequence.f7,
+        .keyboardF8: RebootTerminalInputProxyView.ControlSequence.f8,
+        .keyboardF9: RebootTerminalInputProxyView.ControlSequence.f9,
+        .keyboardF10: RebootTerminalInputProxyView.ControlSequence.f10,
+        .keyboardF11: RebootTerminalInputProxyView.ControlSequence.f11,
+        .keyboardF12: RebootTerminalInputProxyView.ControlSequence.f12
+    ]
     private var currentInputBuffer = ""
     private var commandHistory: [String] = []
     private var historyCursor: Int?
-    private let terminalCursorGlyph = "▏"
+    private var shortcutPanelMode: ShortcutPanelMode = .primary
+    private let terminalDefaultBackground = UIColor(red: 0.04, green: 0.07, blue: 0.16, alpha: 1)
+    private let terminalDefaultForeground = UIColor(red: 0.76, green: 0.92, blue: 1.0, alpha: 1)
+    private let phoneTerminalBaseFontSize: CGFloat = 11
+    private let phoneTerminalMinimumFitFontSize: CGFloat = 6
 
     init(model: RebootAppModel) {
         self.model = model
@@ -2688,15 +2864,18 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         bindTheme()
 
         outputView.isEditable = false
-        outputView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        outputView.font = .monospacedSystemFont(ofSize: phoneTerminalBaseFontSize, weight: .regular)
         outputView.layer.cornerRadius = 10
         outputView.layer.borderWidth = 1
         outputView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         outputView.textContainer.lineFragmentPadding = 0
-        outputView.textContainer.lineBreakMode = .byCharWrapping
+        outputView.textContainer.lineBreakMode = .byClipping
+        outputView.textContainer.widthTracksTextView = false
         outputView.translatesAutoresizingMaskIntoConstraints = false
         outputView.isScrollEnabled = true
         outputView.alwaysBounceVertical = true
+        outputView.alwaysBounceHorizontal = true
+        outputView.showsHorizontalScrollIndicator = true
         outputView.keyboardDismissMode = .interactive
         outputView.isSelectable = true
         outputView.delegate = self
@@ -2711,36 +2890,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         shortcutsRow.spacing = 8
         shortcutsRow.distribution = .fillProportionally
         shortcutsRow.alignment = .fill
-        let shortcutKeys: [(String, String)] = [
-            ("esc", "\u{1B}"),
-            ("tab", "\t"),
-            ("ctrl", "\u{3}"),
-            ("alt", ""),
-            ("/", "/"),
-            ("|", "|"),
-            ("~", "~"),
-            ("-", "-"),
-            ("copy", ""),
-            ("paste", ""),
-            ("^C", "\u{3}"),
-            ("^\\", "\u{1C}")
-        ]
-        for item in shortcutKeys {
-            let button = makeSoftKeyButton(item.0)
-            button.addAction(UIAction { [weak self] _ in
-                guard let self else { return }
-                if item.0 == "copy" {
-                    self.copyTerminalText()
-                } else if item.0 == "paste" {
-                    self.pasteTerminalText()
-                } else if !item.1.isEmpty {
-                    self.model.send(item.1)
-                }
-            }, for: .touchUpInside)
-            button.setContentHuggingPriority(.required, for: .horizontal)
-            button.setContentCompressionResistancePriority(.required, for: .horizontal)
-            shortcutsRow.addArrangedSubview(button)
-        }
+        rebuildShortcutsRow()
         shortcutsRow.translatesAutoresizingMaskIntoConstraints = false
         shortcutsScrollView.addSubview(shortcutsRow)
         NSLayoutConstraint.activate([
@@ -2767,6 +2917,9 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         }
         keyboardInputField.onDeleteBackward = { [weak self] in
             self?.handleTerminalBackspace()
+        }
+        keyboardInputField.onControlSequence = { [weak self] sequence in
+            self?.sendTerminalSequence(sequence)
         }
 
         let focusTap = UITapGestureRecognizer(target: self, action: #selector(focusKeyboard))
@@ -2830,13 +2983,67 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         NotificationCenter.default.removeObserver(self)
     }
 
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses {
+            guard let key = press.key else { continue }
+            if key.keyCode == .keyboardDeleteOrBackspace {
+                handleTerminalBackspace()
+                return
+            }
+            if let sequence = functionKeyMap[key.keyCode] {
+                sendTerminalSequence(sequence)
+                return
+            }
+        }
+        super.pressesBegan(presses, with: event)
+    }
+
     private func render(state: TerminalSurfaceState) {
+        latestTerminalState = state
         titleLabel.text = state.connectionTitle.isEmpty ? "Terminal" : state.connectionTitle
         applySessionStatus(state.sessionState)
-        let currentOffset = outputView.contentOffset
-        let shouldScrollToBottom = shouldStickToBottomDuringRender(previousOffset: currentOffset)
+        let isAlternateScreen = state.buffer.isAlternateScreenActive
+        let wasAlternateScreen = lastRenderedAlternateScreen
+        let didEnterAlternateScreen = isAlternateScreen && !wasAlternateScreen
+        lastRenderedAlternateScreen = isAlternateScreen
+        updatePhoneAlternateScreenFontIfNeeded(for: state)
+        updateOutputTextContainerWidth(for: state)
+
+        if isAlternateScreen {
+            if didEnterAlternateScreen {
+                resetAlternateViewportForNewCanvas()
+            }
+            let previousOffset = outputView.contentOffset
+            let hadHorizontalOverflowBeforeRender = didEnterAlternateScreen ? false : hasHorizontalOverflow(outputView)
+            let hadVerticalOverflowBeforeRender = didEnterAlternateScreen ? false : hasVerticalOverflow(outputView)
+            let wasNearBottomBeforeRender = didEnterAlternateScreen ? false : isNearBottom(outputView)
+            let wasNearRightBeforeRender = didEnterAlternateScreen ? false : isNearRight(outputView)
+            let theme = themeManager.theme(for: traitCollection)
+            let renderedStyledLines = state.buffer.renderedStyledLines(
+                insertingCursor: state.sessionState == .connected,
+                forceCursor: true
+            )
+            outputView.attributedText = attributedTerminalText(
+                from: renderedStyledLines,
+                fallback: state.transcript.isEmpty ? state.statusMessage : state.transcript,
+                theme: theme
+            )
+            outputView.layoutIfNeeded()
+            restoreAlternateViewportAfterRender(
+                previousOffset: previousOffset,
+                forceTopLeft: didEnterAlternateScreen,
+                hadHorizontalOverflowBeforeRender: hadHorizontalOverflowBeforeRender,
+                hadVerticalOverflowBeforeRender: hadVerticalOverflowBeforeRender,
+                wasNearRightBeforeRender: wasNearRightBeforeRender,
+                wasNearBottomBeforeRender: wasNearBottomBeforeRender
+            )
+            return
+        }
+
         let renderedText = renderableTerminalText(for: state)
         outputView.text = renderedText
+        let currentOffset = outputView.contentOffset
+        let shouldScrollToBottom = wasAlternateScreen || shouldStickToBottomDuringRender(previousOffset: currentOffset)
         if shouldScrollToBottom {
             scrollOutputToBottom()
             isFollowingTail = true
@@ -2853,37 +3060,258 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         }
     }
 
+    private func resetAlternateViewportForNewCanvas() {
+        alternateViewportState = ViewportState()
+        let origin = CGPoint(
+            x: -outputView.adjustedContentInset.left,
+            y: -outputView.adjustedContentInset.top
+        )
+        outputView.setContentOffset(origin, animated: false)
+    }
+
     private func renderableTerminalText(for state: TerminalSurfaceState) -> String {
-        guard !state.transcript.isEmpty else {
-            return state.statusMessage
+        let includeCursor = state.sessionState == .connected
+        let viewportLines = state.buffer.renderedViewportLinesPreservingColumns(insertingCursor: includeCursor)
+        guard !viewportLines.isEmpty else {
+            return state.transcript.isEmpty ? state.statusMessage : state.transcript
+        }
+        return viewportLines.joined(separator: "\n")
+    }
+
+    private func attributedTerminalText(
+        from styledLines: [TerminalStyledLine],
+        fallback: String,
+        theme: AdminTheme
+    ) -> NSAttributedString {
+        let noWrapParagraphStyle: NSParagraphStyle = {
+            let style = NSMutableParagraphStyle()
+            style.lineBreakMode = .byClipping
+            style.lineSpacing = 0
+            style.paragraphSpacing = 0
+            style.paragraphSpacingBefore = 0
+            return style
+        }()
+
+        guard !styledLines.isEmpty else {
+            return NSAttributedString(
+                string: fallback,
+                attributes: [
+                    .font: outputView.font ?? .monospacedSystemFont(ofSize: 11, weight: .regular),
+                    .foregroundColor: terminalDefaultForeground,
+                    .backgroundColor: terminalDefaultBackground,
+                    .paragraphStyle: noWrapParagraphStyle
+                ]
+            )
         }
 
-        guard state.sessionState == .connected,
-              state.buffer.cursor.isVisible,
-              !state.buffer.styledLines.isEmpty else {
-            return state.transcript
+        let font = outputView.font ?? .monospacedSystemFont(ofSize: 11, weight: .regular)
+        let rendered = NSMutableAttributedString()
+        for (lineIndex, line) in styledLines.enumerated() {
+            var lineBackground = terminalDefaultBackground
+            for cell in line.cells {
+                let style = cell.style
+                let colors = resolvedCellColors(style: style, theme: theme)
+                let descriptor = font.fontDescriptor.withSymbolicTraits(symbolicTraits(for: style)) ?? font.fontDescriptor
+                let cellFont = UIFont(descriptor: descriptor, size: font.pointSize)
+                var attributes: [NSAttributedString.Key: Any] = [
+                    .font: cellFont,
+                    .foregroundColor: colors.foreground,
+                    .backgroundColor: colors.background,
+                    .paragraphStyle: noWrapParagraphStyle
+                ]
+                lineBackground = colors.background
+                if style.isUnderlined {
+                    attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+                }
+                rendered.append(NSAttributedString(string: cell.character, attributes: attributes))
+            }
+            if lineIndex < styledLines.count - 1 {
+                rendered.append(NSAttributedString(
+                    string: "\n",
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: terminalDefaultForeground,
+                        .backgroundColor: lineBackground,
+                        .paragraphStyle: noWrapParagraphStyle
+                    ]
+                ))
+            }
+        }
+        return rendered
+    }
+
+    private func updateOutputTextContainerWidth(for state: TerminalSurfaceState) {
+        let font = outputView.font ?? .monospacedSystemFont(ofSize: phoneTerminalBaseFontSize, weight: .regular)
+        let glyphWidth = max(4.0, measuredMonospaceGlyphWidth(for: font))
+        let insets = outputView.textContainerInset
+        let targetWidth = max(
+            outputView.bounds.width - insets.left - insets.right,
+            CGFloat(state.buffer.columns) * glyphWidth
+        )
+        outputView.textContainer.size = CGSize(width: targetWidth, height: .greatestFiniteMagnitude)
+    }
+
+    private func updatePhoneAlternateScreenFontIfNeeded(for state: TerminalSurfaceState) {
+        let regularInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        let compactInsets = UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+        let targetInsets = state.buffer.isAlternateScreenActive ? compactInsets : regularInsets
+        if outputView.textContainerInset != targetInsets {
+            outputView.textContainerInset = targetInsets
         }
 
-        var lines = state.transcript
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map(String.init)
-        guard !lines.isEmpty else {
-            return state.transcript
+        let targetPointSize: CGFloat
+        if state.buffer.isAlternateScreenActive && !model.isExternalMirrorConnected() {
+            targetPointSize = fittingPhoneMonospaceFontSize(
+                columns: max(1, state.buffer.columns),
+                rows: max(1, state.buffer.rows),
+                insets: targetInsets
+            )
+        } else {
+            // With an external display attached the phone is a pan viewport over
+            // the external canvas; do not shrink that canvas into a thumbnail.
+            targetPointSize = phoneTerminalBaseFontSize
         }
 
-        let cursor = state.buffer.cursor
-        let row = max(0, min(state.buffer.styledLines.count - 1, cursor.row))
-        let cells = state.buffer.styledLines[row].cells
-        let prefixCount = max(0, min(cells.count, cursor.column))
-        let livePrefix = cells.prefix(prefixCount).map(\.character).joined()
-        lines[lines.count - 1] = livePrefix + terminalCursorGlyph
-        return lines.joined(separator: "\n")
+        if abs((outputView.font?.pointSize ?? 0) - targetPointSize) > 0.01 {
+            outputView.font = .monospacedSystemFont(ofSize: targetPointSize, weight: .regular)
+        }
+    }
+
+    private func fittingPhoneMonospaceFontSize(
+        columns: Int,
+        rows: Int,
+        insets: UIEdgeInsets
+    ) -> CGFloat {
+        guard outputView.bounds.width > 80, outputView.bounds.height > 120 else {
+            return phoneTerminalBaseFontSize
+        }
+
+        let usableWidth = max(1, outputView.bounds.width - insets.left - insets.right)
+        let usableHeight = max(1, outputView.bounds.height - insets.top - insets.bottom)
+        var size = phoneTerminalBaseFontSize
+        while size >= phoneTerminalMinimumFitFontSize {
+            let font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+            let glyphWidth = measuredMonospaceGlyphWidth(for: font)
+            let requiredWidth = glyphWidth * CGFloat(columns)
+            let requiredHeight = font.lineHeight * CGFloat(rows)
+            if requiredWidth <= usableWidth && requiredHeight <= usableHeight {
+                return size
+            }
+            size -= 0.5
+        }
+        return phoneTerminalMinimumFitFontSize
+    }
+
+    private func restoreAlternateViewportAfterRender(
+        previousOffset: CGPoint,
+        forceTopLeft: Bool,
+        hadHorizontalOverflowBeforeRender: Bool,
+        hadVerticalOverflowBeforeRender: Bool,
+        wasNearRightBeforeRender: Bool,
+        wasNearBottomBeforeRender: Bool
+    ) {
+        let minX = -outputView.adjustedContentInset.left
+        let minY = -outputView.adjustedContentInset.top
+        let maxX = max(
+            minX,
+            outputView.contentSize.width - outputView.bounds.width + outputView.adjustedContentInset.right
+        )
+        let maxY = max(
+            minY,
+            outputView.contentSize.height - outputView.bounds.height + outputView.adjustedContentInset.bottom
+        )
+
+        var targetX = min(max(previousOffset.x, minX), maxX)
+        var targetY = min(max(previousOffset.y, minY), maxY)
+
+        if forceTopLeft {
+            targetX = minX
+            targetY = minY
+        } else if !alternateViewportState.isUserPanning {
+            if alternateViewportState.stickToRight || (hadHorizontalOverflowBeforeRender && wasNearRightBeforeRender) {
+                targetX = maxX
+            }
+            if alternateViewportState.stickToBottom || (hadVerticalOverflowBeforeRender && wasNearBottomBeforeRender) {
+                targetY = maxY
+            }
+        }
+
+        let target = CGPoint(x: targetX, y: targetY)
+        outputView.setContentOffset(target, animated: false)
+
+        alternateViewportState.offsetX = targetX
+        alternateViewportState.offsetY = targetY
+        alternateViewportState.stickToRight = hasHorizontalOverflow(outputView) && targetX >= (maxX - 16)
+        alternateViewportState.stickToBottom = hasVerticalOverflow(outputView) && targetY >= (maxY - 16)
+    }
+
+    private func symbolicTraits(for style: TerminalTextStyle) -> UIFontDescriptor.SymbolicTraits {
+        var traits: UIFontDescriptor.SymbolicTraits = []
+        if style.isBold { traits.insert(.traitBold) }
+        if style.isItalic { traits.insert(.traitItalic) }
+        return traits
+    }
+
+    private func resolvedCellColors(style: TerminalTextStyle, theme: AdminTheme) -> (foreground: UIColor, background: UIColor) {
+        let baseForeground = resolvedColor(style.foreground, isBackground: false, theme: theme)
+        let baseBackground = resolvedColor(style.background, isBackground: true, theme: theme)
+        if style.isInverse {
+            return (foreground: baseBackground, background: baseForeground)
+        }
+        return (foreground: baseForeground, background: baseBackground)
+    }
+
+    private func resolvedColor(_ color: TerminalColor, isBackground: Bool, theme: AdminTheme) -> UIColor {
+        switch color {
+        case .default:
+            return isBackground ? terminalDefaultBackground : terminalDefaultForeground
+        case .rgb(let red, let green, let blue):
+            return UIColor(
+                red: CGFloat(max(0, min(255, red))) / 255,
+                green: CGFloat(max(0, min(255, green))) / 255,
+                blue: CGFloat(max(0, min(255, blue))) / 255,
+                alpha: 1
+            )
+        case .ansi256(let code):
+            return ansi256Color(code: code, isBackground: isBackground, theme: theme)
+        }
+    }
+
+    private func ansi256Color(code: Int, isBackground: Bool, theme: AdminTheme) -> UIColor {
+        let normalized = max(0, min(255, code))
+        if normalized < 16 {
+            let palette: [UIColor] = [
+                UIColor.black, UIColor(red: 0.80, green: 0.25, blue: 0.26, alpha: 1),
+                UIColor(red: 0.34, green: 0.70, blue: 0.42, alpha: 1), UIColor(red: 0.90, green: 0.70, blue: 0.30, alpha: 1),
+                UIColor(red: 0.36, green: 0.58, blue: 0.94, alpha: 1), UIColor(red: 0.73, green: 0.45, blue: 0.86, alpha: 1),
+                UIColor(red: 0.33, green: 0.75, blue: 0.78, alpha: 1), UIColor(red: 0.80, green: 0.82, blue: 0.84, alpha: 1),
+                UIColor(red: 0.35, green: 0.38, blue: 0.42, alpha: 1), UIColor(red: 0.94, green: 0.45, blue: 0.46, alpha: 1),
+                UIColor(red: 0.49, green: 0.83, blue: 0.56, alpha: 1), UIColor(red: 0.98, green: 0.80, blue: 0.44, alpha: 1),
+                UIColor(red: 0.49, green: 0.69, blue: 0.98, alpha: 1), UIColor(red: 0.84, green: 0.61, blue: 0.95, alpha: 1),
+                UIColor(red: 0.50, green: 0.88, blue: 0.90, alpha: 1), UIColor.white
+            ]
+            let color = palette[normalized]
+            return (isBackground && normalized == 0) ? terminalDefaultBackground : color
+        }
+
+        if normalized < 232 {
+            let v = normalized - 16
+            let r = v / 36
+            let g = (v / 6) % 6
+            let b = v % 6
+            func channel(_ value: Int) -> CGFloat {
+                value == 0 ? 0 : CGFloat(55 + value * 40) / 255
+            }
+            return UIColor(red: channel(r), green: channel(g), blue: channel(b), alpha: 1)
+        }
+
+        let gray = CGFloat(8 + (normalized - 232) * 10) / 255
+        return UIColor(white: gray, alpha: 1)
     }
 
     private func shouldStickToBottomDuringRender(previousOffset: CGPoint) -> Bool {
-        // While typing, keep terminal pinned to tail unless user is intentionally scrolling.
-        if keyboardInputField.isFirstResponder && !isInteractingWithTerminalScroll {
-            return true
+        if latestTerminalState?.buffer.isAlternateScreenActive == true {
+            return false
         }
         if isFollowingTail {
             return true
@@ -2905,27 +3333,46 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         guard scrollView === outputView else { return }
         isInteractingWithTerminalScroll = true
         isFollowingTail = false
+        if latestTerminalState?.buffer.isAlternateScreenActive == true {
+            alternateViewportState.isUserPanning = true
+        }
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard scrollView === outputView else { return }
         if !isInteractingWithTerminalScroll {
-            isFollowingTail = isNearBottom(scrollView)
+            isFollowingTail = !hasVerticalOverflow(scrollView) || isNearBottom(scrollView)
         } else if !isNearBottom(scrollView) {
             isFollowingTail = false
+        }
+        if latestTerminalState?.buffer.isAlternateScreenActive == true {
+            alternateViewportState.offsetX = scrollView.contentOffset.x
+            alternateViewportState.offsetY = scrollView.contentOffset.y
+            alternateViewportState.stickToRight = isNearRight(scrollView)
+            alternateViewportState.stickToBottom = isNearBottom(scrollView)
         }
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         guard scrollView === outputView, !decelerate else { return }
         isInteractingWithTerminalScroll = false
-        isFollowingTail = isNearBottom(scrollView)
+        isFollowingTail = !hasVerticalOverflow(scrollView) || isNearBottom(scrollView)
+        if latestTerminalState?.buffer.isAlternateScreenActive == true {
+            alternateViewportState.isUserPanning = false
+            alternateViewportState.stickToRight = isNearRight(scrollView)
+            alternateViewportState.stickToBottom = isNearBottom(scrollView)
+        }
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         guard scrollView === outputView else { return }
         isInteractingWithTerminalScroll = false
-        isFollowingTail = isNearBottom(scrollView)
+        isFollowingTail = !hasVerticalOverflow(scrollView) || isNearBottom(scrollView)
+        if latestTerminalState?.buffer.isAlternateScreenActive == true {
+            alternateViewportState.isUserPanning = false
+            alternateViewportState.stickToRight = isNearRight(scrollView)
+            alternateViewportState.stickToBottom = isNearBottom(scrollView)
+        }
     }
 
     private func scrollOutputToBottom() {
@@ -2936,12 +3383,36 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         outputView.setContentOffset(CGPoint(x: 0, y: maxOffsetY), animated: false)
     }
 
+    private func hasHorizontalOverflow(_ scrollView: UIScrollView, threshold: CGFloat = 1) -> Bool {
+        scrollView.contentSize.width + scrollView.adjustedContentInset.left + scrollView.adjustedContentInset.right >
+            scrollView.bounds.width + threshold
+    }
+
+    private func hasVerticalOverflow(_ scrollView: UIScrollView, threshold: CGFloat = 1) -> Bool {
+        scrollView.contentSize.height + scrollView.adjustedContentInset.top + scrollView.adjustedContentInset.bottom >
+            scrollView.bounds.height + threshold
+    }
+
     private func isNearBottom(_ scrollView: UIScrollView, threshold: CGFloat = 16) -> Bool {
+        guard hasVerticalOverflow(scrollView, threshold: threshold) else {
+            return false
+        }
         let maxOffsetY = max(
             -scrollView.adjustedContentInset.top,
             scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
         )
         return scrollView.contentOffset.y >= (maxOffsetY - threshold)
+    }
+
+    private func isNearRight(_ scrollView: UIScrollView, threshold: CGFloat = 16) -> Bool {
+        guard hasHorizontalOverflow(scrollView, threshold: threshold) else {
+            return false
+        }
+        let maxOffsetX = max(
+            -scrollView.adjustedContentInset.left,
+            scrollView.contentSize.width - scrollView.bounds.width + scrollView.adjustedContentInset.right
+        )
+        return scrollView.contentOffset.x >= (maxOffsetX - threshold)
     }
 
     private func handleTerminalInsertedText(_ text: String) {
@@ -2950,7 +3421,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
             return
         }
         captureInputForLocalHistory(normalized)
-        model.send(normalized)
+        sendTerminalSequence(normalized)
     }
 
     private func handleTerminalBackspace() {
@@ -2958,7 +3429,11 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
             currentInputBuffer.removeLast()
         }
         historyCursor = nil
-        model.send("\u{7F}")
+        if latestTerminalState?.buffer.isAlternateScreenActive == true {
+            sendTerminalSequence("\u{8}")
+        } else {
+            sendTerminalSequence("\u{7F}")
+        }
     }
 
     private func captureInputForLocalHistory(_ text: String) {
@@ -3009,11 +3484,41 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     private func replaceCurrentInput(with command: String) {
         if !currentInputBuffer.isEmpty {
             for _ in currentInputBuffer {
-                model.send("\u{7F}")
+                sendTerminalSequence("\u{7F}")
             }
         }
-        model.send(command)
+        sendTerminalSequence(command)
         currentInputBuffer = command
+    }
+
+    private func sendTerminalSequence(_ sequence: String) {
+        guard !sequence.isEmpty else {
+            return
+        }
+        model.send(resolvedSequenceForTerminalMode(sequence))
+    }
+
+    private func resolvedSequenceForTerminalMode(_ sequence: String) -> String {
+        guard latestTerminalState?.buffer.isApplicationCursorKeysEnabled == true else {
+            return sequence
+        }
+
+        switch sequence {
+        case RebootTerminalInputProxyView.ControlSequence.up:
+            return RebootTerminalInputProxyView.ControlSequence.appUp
+        case RebootTerminalInputProxyView.ControlSequence.down:
+            return RebootTerminalInputProxyView.ControlSequence.appDown
+        case RebootTerminalInputProxyView.ControlSequence.right:
+            return RebootTerminalInputProxyView.ControlSequence.appRight
+        case RebootTerminalInputProxyView.ControlSequence.left:
+            return RebootTerminalInputProxyView.ControlSequence.appLeft
+        case RebootTerminalInputProxyView.ControlSequence.home:
+            return RebootTerminalInputProxyView.ControlSequence.appHome
+        case RebootTerminalInputProxyView.ControlSequence.end:
+            return RebootTerminalInputProxyView.ControlSequence.appEnd
+        default:
+            return sequence
+        }
     }
 
     private func configureSessionRow() {
@@ -3125,18 +3630,18 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
 
         if let clipboard = UIPasteboard.general.string, !clipboard.isEmpty {
             sheet.addAction(UIAlertAction(title: "Paste Clipboard", style: .default, handler: { [weak self] _ in
-                self?.model.send(clipboard)
+                self?.sendTerminalSequence(self?.preparePastePayload(clipboard) ?? clipboard)
                 self?.focusKeyboard()
             }))
         }
 
         sheet.addAction(UIAlertAction(title: "Send Ctrl+C", style: .default, handler: { [weak self] _ in
-            self?.model.send("\u{3}")
+            self?.sendTerminalSequence(RebootTerminalInputProxyView.ControlSequence.ctrlC)
             self?.focusKeyboard()
         }))
 
         sheet.addAction(UIAlertAction(title: "Clear Screen", style: .default, handler: { [weak self] _ in
-            self?.model.send("\u{C}")
+            self?.sendTerminalSequence("\u{C}")
             self?.focusKeyboard()
         }))
 
@@ -3195,27 +3700,28 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         guard outputView.bounds.width > 80, outputView.bounds.height > 120 else {
             return
         }
+        // External mirror drives PTY geometry while connected to keep TUI
+        // rendering stable across both displays.
+        if model.isExternalMirrorConnected() {
+            return
+        }
 
-        let font = outputView.font ?? .monospacedSystemFont(ofSize: 12, weight: .regular)
-        let insets = outputView.textContainerInset
-        let linePadding = outputView.textContainer.lineFragmentPadding * 2
-        let usableWidth = max(0, outputView.bounds.width - insets.left - insets.right - linePadding)
-        let usableHeight = max(0, outputView.bounds.height - insets.top - insets.bottom)
-        // Slightly bias toward wider usable cols: UIKit text metrics tend to
-        // overestimate mono glyph advance for terminal PTY sizing.
-        // Strong bias toward higher COLUMNS so shell-side wrapping doesn't happen too early.
-        // We prefer visual wrap in UITextView over early server-side hard wraps.
-        let glyphWidth = max(2.0, measuredMonospaceGlyphWidth(for: font) * 0.46)
-        let rowHeight = max(10.0, font.lineHeight)
-
-        let columns = Int(floor(usableWidth / glyphWidth)) + 20
-        let rows = Int(floor(usableHeight / rowHeight))
         let screenScale = view.window?.screen.scale ?? UIScreen.main.scale
+        let phoneBounds = TerminalRenderProfileResolver.SurfaceBounds(
+            widthPoints: Double(outputView.bounds.width),
+            heightPoints: Double(outputView.bounds.height),
+            scale: Double(screenScale)
+        )
+        let profile = TerminalRenderProfileResolver.resolveRenderProfile(
+            phoneBounds: phoneBounds,
+            externalBounds: nil,
+            isAlternateScreen: latestTerminalState?.buffer.isAlternateScreenActive ?? false
+        )
         let terminalSize = TerminalSize(
-            columns: max(40, min(160, columns)),
-            rows: max(18, rows),
-            pixelWidth: Int(outputView.bounds.width * screenScale),
-            pixelHeight: Int(outputView.bounds.height * screenScale)
+            columns: profile.columns,
+            rows: profile.rows,
+            pixelWidth: profile.pixelWidth,
+            pixelHeight: profile.pixelHeight
         )
 
         guard terminalSize != lastAppliedTerminalSize else {
@@ -3248,6 +3754,77 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         return button
     }
 
+    private func rebuildShortcutsRow() {
+        shortcutsRow.arrangedSubviews.forEach {
+            shortcutsRow.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+
+        for item in shortcutItems(for: shortcutPanelMode) {
+            let button = makeSoftKeyButton(item.label)
+            button.addAction(UIAction { [weak self] _ in
+                guard let self else { return }
+                switch item.action {
+                case .copy:
+                    self.copyTerminalText()
+                case .paste:
+                    self.pasteTerminalText()
+                case .toggleFn:
+                    self.shortcutPanelMode = (self.shortcutPanelMode == .primary) ? .function : .primary
+                    self.rebuildShortcutsRow()
+                    self.applyTheme()
+                case .sequence(let sequence):
+                    guard !sequence.isEmpty else { return }
+                    self.sendTerminalSequence(sequence)
+                }
+            }, for: .touchUpInside)
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+            shortcutsRow.addArrangedSubview(button)
+        }
+    }
+
+    private func shortcutItems(for mode: ShortcutPanelMode) -> [(label: String, action: ShortcutAction)] {
+        switch mode {
+        case .primary:
+            return [
+                ("Fn", .toggleFn),
+                ("esc", .sequence(RebootTerminalInputProxyView.ControlSequence.escape)),
+                ("tab", .sequence(RebootTerminalInputProxyView.ControlSequence.tab)),
+                ("s-tab", .sequence(RebootTerminalInputProxyView.ControlSequence.shiftTab)),
+                ("↑", .sequence(RebootTerminalInputProxyView.ControlSequence.up)),
+                ("↓", .sequence(RebootTerminalInputProxyView.ControlSequence.down)),
+                ("←", .sequence(RebootTerminalInputProxyView.ControlSequence.left)),
+                ("→", .sequence(RebootTerminalInputProxyView.ControlSequence.right)),
+                ("⌫", .sequence(latestTerminalState?.buffer.isAlternateScreenActive == true ? "\u{8}" : "\u{7F}")),
+                ("/", .sequence("/")),
+                ("|", .sequence("|")),
+                ("~", .sequence("~")),
+                ("-", .sequence("-")),
+                ("copy", .copy),
+                ("paste", .paste),
+                ("^C", .sequence(RebootTerminalInputProxyView.ControlSequence.ctrlC)),
+                ("^\\", .sequence(RebootTerminalInputProxyView.ControlSequence.ctrlBackslash))
+            ]
+        case .function:
+            return [
+                ("Fn", .toggleFn),
+                ("F1", .sequence(RebootTerminalInputProxyView.ControlSequence.f1)),
+                ("F2", .sequence(RebootTerminalInputProxyView.ControlSequence.f2)),
+                ("F3", .sequence(RebootTerminalInputProxyView.ControlSequence.f3)),
+                ("F4", .sequence(RebootTerminalInputProxyView.ControlSequence.f4)),
+                ("F5", .sequence(RebootTerminalInputProxyView.ControlSequence.f5)),
+                ("F6", .sequence(RebootTerminalInputProxyView.ControlSequence.f6)),
+                ("F7", .sequence(RebootTerminalInputProxyView.ControlSequence.f7)),
+                ("F8", .sequence(RebootTerminalInputProxyView.ControlSequence.f8)),
+                ("F9", .sequence(RebootTerminalInputProxyView.ControlSequence.f9)),
+                ("F10", .sequence(RebootTerminalInputProxyView.ControlSequence.f10)),
+                ("F11", .sequence(RebootTerminalInputProxyView.ControlSequence.f11)),
+                ("F12", .sequence(RebootTerminalInputProxyView.ControlSequence.f12))
+            ]
+        }
+    }
+
     private func copyTerminalText() {
         let text = outputView.text ?? ""
         let payload: String
@@ -3267,7 +3844,14 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         guard let text = UIPasteboard.general.string, !text.isEmpty else {
             return
         }
-        model.send(text)
+        sendTerminalSequence(preparePastePayload(text))
+    }
+
+    private func preparePastePayload(_ text: String) -> String {
+        guard latestTerminalState?.buffer.isBracketedPasteEnabled == true else {
+            return text
+        }
+        return "\u{1B}[200~\(text)\u{1B}[201~"
     }
 
     private func configureHeader() {
@@ -3316,12 +3900,12 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         view.backgroundColor = theme.backgroundPrimary
         closeButton.configuration?.baseForegroundColor = theme.textPrimary
         titleLabel.textColor = theme.textPrimary
-        outputView.backgroundColor = theme.surfaceSecondary
-        outputView.textColor = theme.textPrimary
+        outputView.backgroundColor = terminalDefaultBackground
+        outputView.textColor = terminalDefaultForeground
         outputView.layer.borderColor = theme.strokeSubtle.cgColor
         shortcutsScrollView.backgroundColor = theme.surfacePrimary
         shortcutsScrollView.layer.borderColor = theme.strokeSubtle.cgColor
-        keyboardInputField.keyboardAppearance = themeManager.resolvedStyle(for: traitCollection) == .lightOps ? .light : .dark
+        keyboardInputField.keyboardAppearance = .dark
         styleSessionControls(for: theme)
         styleSoftKeyButtons(for: theme)
     }

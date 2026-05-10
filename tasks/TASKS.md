@@ -79,3 +79,102 @@
    Done by: CODEX
    Done at: 2026-04-21T09:21:29Z
 
+9. terminal-mirror-mc-regression
+   Id: 9-terminal-mirror-mc-regression
+   Scope: Fix phone/external mirror rendering regressions and mc layout
+   Files: AdminConsoleApp/ViewControllers/ControlRootViewController.swift,AdminConsoleApp/DesktopSceneDelegate.swift,Packages/AppModules/Sources/DesktopDomain/Models.swift
+   Note: Patched mobile-first PTY sizing and mirror read-only behavior; swift test passed; xcodebuild build passed; xcodebuild test command hangs in UI test runner in this environment.
+   Detail: tasks/details/9-terminal-mirror-mc-regression.md
+   Claimed by: CODEX
+   Claimed at: 2026-04-21T12:37:42Z
+   Done by: CODEX
+   Done at: 2026-04-21T12:44:20Z
+
+10. external-display-fit-colors-fkeys
+   Id: 10-external-display-fit-colors-fkeys
+   Scope: External display full-screen rendering, MC colors, hardware F1-F12
+   Files: AdminConsoleApp/DesktopSceneDelegate.swift,AdminConsoleApp/ViewControllers/ControlRootViewController.swift
+   Note: Implemented external full-screen adaptive font fit, enabled ANSI background colors for mc, and added hardware F1-F12 mapping. swift test passed, xcodebuild build passed.
+   Detail: tasks/details/10-external-display-fit-colors-fkeys.md
+   Claimed by: CODEX
+   Claimed at: 2026-04-21T12:52:46Z
+   Done by: CODEX
+   Done at: 2026-04-21T12:54:36Z
+
+11. external-mirror-mc-fullwidth
+   Id: 11-external-mirror-mc-fullwidth
+   Scope: Fix external mirror width for alternate-screen TUI and expose visible soft F1-F12 keys
+   Files: AdminConsoleApp/ViewControllers/ControlRootViewController.swift
+   Note: Done. Added resize re-apply on normal<->alternate screen transition; reordered soft keys to explicit F1-F12 first. Validation: swift test (54/54), xcodebuild AdminConsoleApp build succeeded.
+   Detail: tasks/details/11-external-mirror-mc-fullwidth.md
+   Claimed by: CODEX
+   Claimed at: 2026-04-21T13:22:47Z
+   Done by: CODEX
+   Done at: 2026-04-21T13:23:14Z
+
+12. backspace-phone-mc-fix
+   Id: 12-backspace-phone-mc-fix
+   Scope: Fix hardware backspace mapping and stabilize phone alternate-screen mc render
+   Files: AdminConsoleApp/ViewControllers/ControlRootViewController.swift,Packages/AppModules/Sources/SSHKit/TerminalEmulator.swift
+   Note: Fixed hardware Backspace mapping (removed forward-delete keybinding) and stabilized phone alternate-screen rendering via plain-text mode on iPhone. Validation: swift test PASS (55 tests), xcodebuild AdminConsoleApp build PASS.
+   Detail: tasks/details/12-backspace-phone-mc-fix.md
+   Claimed by: CODEX
+   Claimed at: 2026-04-21T15:46:39Z
+   Done by: CODEX
+   Done at: 2026-04-21T15:50:32Z
+
+13. phone-fit-fix-after-mc-stabilization
+   Id: 13-phone-fit-fix-after-mc-stabilization
+   Scope: Fix phone terminal layout fit while keeping external monitor mc rendering stable
+   Files: AdminConsoleApp/ViewControllers/ControlRootViewController.swift,Packages/AppModules/Sources/DesktopDomain/Models.swift,AdminConsoleApp/DesktopSceneDelegate.swift,tasks/**
+   Note: Adjusted phone alternate-screen fit: disabled attributed wrapping, compact insets, adaptive min font for external-mirror mc; swift test + xcodebuild passed.
+   Detail: tasks/details/13-phone-fit-fix-after-mc-stabilization.md
+   Claimed by: CODEX
+   Claimed at: 2026-04-21T17:05:21Z
+   Done by: CODEX
+   Done at: 2026-04-21T17:28:04Z
+
+14. dual-screen-terminal-grid
+   Id: 14-dual-screen-terminal-grid
+   Scope: Fix phone readability when external monitor connected by introducing canonical PTY geometry + per-screen rendering fit
+   Files: AdminConsoleApp/ViewControllers/ControlRootViewController.swift,AdminConsoleApp/DesktopSceneDelegate.swift,Packages/AppModules/Sources/SSHKit/TerminalEmulator.swift,Packages/AppModules/Sources/DesktopDomain/Models.swift
+   Note: Implemented canonical PTY grid + per-screen font-fit strategy; no-wrap attributed rendering on external; mirror phone control override for alternate-screen readability. swift test + xcodebuild passed.
+   Detail: tasks/details/14-dual-screen-terminal-grid.md
+   Claimed by: CODEX
+   Claimed at: 2026-04-21T17:40:05Z
+   Done by: CODEX
+   Done at: 2026-04-21T18:09:01Z
+
+15. external-first-dual-screen-mc
+   Id: 15-external-first-dual-screen-mc
+   Scope: Dual-screen terminal render profiles, external-first PTY sizing, phone pan viewport, MC stability
+   Files: AdminConsoleApp/ViewControllers/ControlRootViewController.swift,AdminConsoleApp/DesktopSceneDelegate.swift,Packages/AppModules/Sources/DesktopDomain/Models.swift,Packages/AppModules/Sources/SSHKit/TerminalEmulator.swift,Packages/AppModules/Tests
+   Note: Implemented external-first dual-screen render flow, phone pan viewport preservation, external geometry fallback/profile resolver, hardware backspace intercept, buffer write guard; passed: swift test (AppModules), xcodebuild build AdminConsoleApp, xcodebuild tests AdminConsoleTests + AdminConsoleUITests/testLaunch
+   Detail: tasks/details/15-external-first-dual-screen-mc.md
+   Claimed by: CODEX
+   Claimed at: 2026-04-21T20:20:50Z
+   Done by: CODEX
+   Done at: 2026-04-21T21:02:45Z
+
+16. terminal-ux-hardening
+   Id: 16-terminal-ux-hardening
+   Scope: Audit and fix weak spots in terminal functional UX after external-first layout
+   Files: AdminConsoleApp/ViewControllers/ControlRootViewController.swift,AdminConsoleApp/DesktopSceneDelegate.swift,Packages/AppModules/Sources/DesktopDomain/TerminalRenderProfile.swift,Packages/AppModules/Tests
+   Note: Fixed terminal render UX weak spots: phone standalone fit, external companion pan, stable alternate viewport anchoring, hardware Backspace fallback. Tests: swift test AppModules passed; iOS simulator generic build passed.
+   Detail: tasks/details/16-terminal-ux-hardening.md
+   Claimed by: CODEX
+   Claimed at: 2026-04-25T22:44:44Z
+   Done by: CODEX
+   Done at: 2026-04-25T23:06:08Z
+
+17. phone-mc-viewport-stability
+   Id: 17-phone-mc-viewport-stability
+   Scope: Stabilize phone-only alternate-screen viewport when launching mc without external monitor
+   Files: AdminConsoleApp/ViewControllers/ControlRootViewController.swift,Packages/AppModules/Tests
+   Note: Stabilized phone-only mc launch by resetting alternate-screen viewport on canvas transition. Tests: swift test AppModules passed; iOS simulator generic build passed.
+   Detail: tasks/details/17-phone-mc-viewport-stability.md
+   Claimed by: CODEX
+   Claimed at: 2026-04-26T13:05:12Z
+   Done by: CODEX
+   Done at: 2026-04-26T13:11:56Z
+

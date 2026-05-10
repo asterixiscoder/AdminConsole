@@ -135,6 +135,8 @@ Acceptance:
   - password prompt is theme-aware,
   - auxiliary SSH session form is theme-aware,
   - live theme updates now propagate across all key user forms.
+- Added dedicated full-terminal roadmap for `mc` parity:
+  - `docs/14-terminal-mc-roadmap.md`.
 - Adopted project tooling via `app-creator`:
   - `Makefile` + `scripts/` + `tasks/` installed,
   - local workflow via `make diagnose/build/test`.

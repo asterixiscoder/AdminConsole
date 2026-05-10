@@ -9,6 +9,7 @@ struct VT100Parser {
     private enum State {
         case ground
         case escape
+        case charsetG0Designator
         case csi(String)
         case osc(String)
         case oscEscape(String)
@@ -25,6 +26,9 @@ struct VT100Parser {
                 handleGround(scalar, screen: &screen, transcript: &result.transcript)
             case .escape:
                 handleEscape(scalar, screen: &screen, transcript: &result.transcript)
+            case .charsetG0Designator:
+                screen.setG0CharacterSet(scalar)
+                state = .ground
             case .csi(let sequence):
                 handleCSI(scalar, existing: sequence, screen: &screen)
             case .osc(let sequence):
@@ -75,6 +79,10 @@ struct VT100Parser {
             screen.lineFeed()
             screen.carriageReturn()
             transcript.append("\n")
+        case 0x0E:
+            screen.setShiftOut(true)
+        case 0x0F:
+            screen.setShiftOut(false)
         case 0x20...0x10FFFF:
             let character = Character(scalar)
             screen.put(character)
@@ -94,6 +102,8 @@ struct VT100Parser {
             state = .csi("")
         case "]":
             state = .osc("")
+        case "(":
+            state = .charsetG0Designator
         case "7":
             screen.saveCursor()
             state = .ground
@@ -186,6 +196,11 @@ struct VT100Parser {
             screen.insertLines(params.first ?? 1)
         case "M":
             screen.deleteLines(params.first ?? 1)
+        case "r":
+            screen.setScrollRegion(
+                top: params.first,
+                bottom: params.dropFirst().first
+            )
         case "P":
             screen.deleteCharacters(params.first ?? 1)
         case "X":
@@ -199,12 +214,12 @@ struct VT100Parser {
         case "u":
             screen.restoreCursor()
         case "h":
-            if isPrivate, params == [25] {
-                screen.setCursorVisibility(true)
+            if isPrivate {
+                screen.setPrivateModes(params, enabled: true)
             }
         case "l":
-            if isPrivate, params == [25] {
-                screen.setCursorVisibility(false)
+            if isPrivate {
+                screen.setPrivateModes(params, enabled: false)
             }
         default:
             break

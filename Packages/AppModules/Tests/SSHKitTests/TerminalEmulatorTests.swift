@@ -122,4 +122,147 @@ final class TerminalEmulatorTests: XCTestCase {
         XCTAssertEqual(emulator.makeTranscript(), "ls")
         XCTAssertEqual(emulator.makeBufferSnapshot().viewportLines[0], "ls")
     }
+
+    func testAlternateScreen1049RestoresMainBufferOnExit() {
+        var emulator = TerminalEmulator(columns: 16, rows: 4)
+
+        emulator.consume("main-buffer")
+        emulator.consume("\u{001B}[?1049h")
+        emulator.consume("alt")
+
+        XCTAssertEqual(emulator.makeBufferSnapshot().viewportLines[0], "alt")
+
+        emulator.consume("\u{001B}[?1049l")
+
+        let snapshot = emulator.makeBufferSnapshot()
+        XCTAssertEqual(snapshot.viewportLines[0], "main-buffer")
+        XCTAssertFalse(snapshot.viewportLines.contains("alt"))
+    }
+
+    func testAlternateScreenRestoreRemainsStableAfterResize() {
+        var emulator = TerminalEmulator(columns: 80, rows: 24)
+
+        emulator.consume("main")
+        emulator.consume("\u{001B}[?1049h")
+        emulator.resize(columns: 251, rows: 59)
+        emulator.consume("mc")
+        emulator.consume("\u{001B}[?1049l")
+        emulator.consume(" ok")
+
+        let snapshot = emulator.makeBufferSnapshot()
+        XCTAssertEqual(snapshot.columns, 251)
+        XCTAssertEqual(snapshot.rows, 59)
+        XCTAssertTrue(snapshot.viewportLines[0].contains("main"))
+        XCTAssertTrue(snapshot.viewportLines[0].contains("ok"))
+    }
+
+    func testCursorVisibilityPrivateModeStillWorksViaPrivateModeRouter() {
+        var emulator = TerminalEmulator(columns: 12, rows: 2)
+
+        emulator.consume("abc")
+        emulator.consume("\u{001B}[?25l")
+        XCTAssertFalse(emulator.makeBufferSnapshot().cursor.isVisible)
+
+        emulator.consume("\u{001B}[?25h")
+        XCTAssertTrue(emulator.makeBufferSnapshot().cursor.isVisible)
+    }
+
+    func testScrollRegionScrollsOnlyInsideConfiguredArea() {
+        var emulator = TerminalEmulator(columns: 16, rows: 4)
+
+        emulator.consume("top")
+        emulator.consume("\u{001B}[2;1Hmid1")
+        emulator.consume("\u{001B}[3;1Hmid2")
+        emulator.consume("\u{001B}[4;1Hbot")
+
+        emulator.consume("\u{001B}[2;3r")
+        emulator.consume("\u{001B}[3;1HZZ\r\nnew")
+
+        let snapshot = emulator.makeBufferSnapshot()
+        XCTAssertEqual(snapshot.viewportLines[0], "top")
+        XCTAssertEqual(snapshot.viewportLines[1], "ZZd2")
+        XCTAssertEqual(snapshot.viewportLines[2], "new")
+        XCTAssertEqual(snapshot.viewportLines[3], "bot")
+    }
+
+    func testLineDrawingCharsetViaSCSAndShiftInOut() {
+        var emulator = TerminalEmulator(columns: 12, rows: 1)
+
+        emulator.consume("\u{001B}(0")
+        emulator.consume("\u{000E}")
+        emulator.consume("lqk")
+        emulator.consume("\u{000F}")
+
+        let snapshot = emulator.makeBufferSnapshot()
+        XCTAssertEqual(snapshot.viewportLines[0], "┌─┐")
+    }
+
+    func testDisablingAutowrapKeepsCursorOnLastColumn() {
+        var emulator = TerminalEmulator(columns: 4, rows: 1)
+
+        emulator.consume("\u{001B}[?7l")
+        emulator.consume("abcde")
+
+        let snapshot = emulator.makeBufferSnapshot()
+        XCTAssertEqual(snapshot.viewportLines[0], "abce")
+    }
+
+    func testRepeatedResizeAndWideWritesKeepGridStable() {
+        var emulator = TerminalEmulator(columns: 80, rows: 24)
+        emulator.consume("\u{001B}[?1049h")
+
+        for index in 0..<40 {
+            emulator.resize(columns: index.isMultiple(of: 2) ? 240 : 92, rows: index.isMultiple(of: 3) ? 67 : 28)
+            emulator.consume(String(repeating: "x", count: 260))
+            emulator.consume("\r\n")
+        }
+
+        let snapshot = emulator.makeBufferSnapshot()
+        XCTAssertEqual(snapshot.viewportLines.count, snapshot.rows)
+        XCTAssertEqual(snapshot.styledLines.count, snapshot.rows)
+        XCTAssertTrue(snapshot.styledLines.allSatisfy { $0.cells.count == snapshot.columns })
+        XCTAssertGreaterThanOrEqual(snapshot.cursor.row, 0)
+        XCTAssertLessThan(snapshot.cursor.row, snapshot.rows)
+        XCTAssertGreaterThanOrEqual(snapshot.cursor.column, 0)
+        XCTAssertLessThan(snapshot.cursor.column, snapshot.columns)
+    }
+
+    func testBracketedPastePrivateModeReflectsInBufferSnapshot() {
+        var emulator = TerminalEmulator(columns: 8, rows: 2)
+
+        emulator.consume("\u{001B}[?2004h")
+        XCTAssertTrue(emulator.makeBufferSnapshot().isBracketedPasteEnabled)
+
+        emulator.consume("\u{001B}[?2004l")
+        XCTAssertFalse(emulator.makeBufferSnapshot().isBracketedPasteEnabled)
+    }
+
+    func testApplicationCursorKeysModeReflectsInBufferSnapshot() {
+        var emulator = TerminalEmulator(columns: 8, rows: 2)
+
+        emulator.consume("\u{001B}[?1h")
+        XCTAssertTrue(emulator.makeBufferSnapshot().isApplicationCursorKeysEnabled)
+
+        emulator.consume("\u{001B}[?1l")
+        XCTAssertFalse(emulator.makeBufferSnapshot().isApplicationCursorKeysEnabled)
+    }
+
+    func testMouseTrackingPrivateModesReflectInBufferSnapshot() {
+        var emulator = TerminalEmulator(columns: 8, rows: 2)
+
+        emulator.consume("\u{001B}[?1000h")
+        XCTAssertEqual(emulator.makeBufferSnapshot().mouseTrackingMode, .x10)
+
+        emulator.consume("\u{001B}[?1002h")
+        XCTAssertEqual(emulator.makeBufferSnapshot().mouseTrackingMode, .buttonEvent)
+
+        emulator.consume("\u{001B}[?1006h")
+        XCTAssertTrue(emulator.makeBufferSnapshot().isSgrMouseModeEnabled)
+
+        emulator.consume("\u{001B}[?1006l")
+        XCTAssertFalse(emulator.makeBufferSnapshot().isSgrMouseModeEnabled)
+
+        emulator.consume("\u{001B}[?1002l")
+        XCTAssertEqual(emulator.makeBufferSnapshot().mouseTrackingMode, .none)
+    }
 }

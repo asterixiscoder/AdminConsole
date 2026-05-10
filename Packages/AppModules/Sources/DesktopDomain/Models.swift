@@ -207,6 +207,13 @@ public struct TerminalTextStyle: Codable, Equatable, Sendable {
     public static let `default` = TerminalTextStyle()
 }
 
+public enum TerminalMouseTrackingMode: String, Codable, Equatable, Sendable {
+    case none
+    case x10
+    case buttonEvent
+    case anyEvent
+}
+
 public struct TerminalCell: Codable, Equatable, Sendable {
     public var character: String
     public var style: TerminalTextStyle
@@ -244,13 +251,23 @@ public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
     public var styledLines: [TerminalStyledLine]
     public var cursor: TerminalCursorState
     public var scrollbackLineCount: Int
+    public var isBracketedPasteEnabled: Bool
+    public var isApplicationCursorKeysEnabled: Bool
+    public var mouseTrackingMode: TerminalMouseTrackingMode
+    public var isSgrMouseModeEnabled: Bool
+    public var isAlternateScreenActive: Bool
 
     public init(
         columns: Int,
         rows: Int,
         styledLines: [TerminalStyledLine],
         cursor: TerminalCursorState = TerminalCursorState(),
-        scrollbackLineCount: Int = 0
+        scrollbackLineCount: Int = 0,
+        isBracketedPasteEnabled: Bool = false,
+        isApplicationCursorKeysEnabled: Bool = false,
+        mouseTrackingMode: TerminalMouseTrackingMode = .none,
+        isSgrMouseModeEnabled: Bool = false,
+        isAlternateScreenActive: Bool = false
     ) {
         self.columns = max(1, columns)
         self.rows = max(1, rows)
@@ -264,6 +281,11 @@ public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
         )
         self.cursor = cursor
         self.scrollbackLineCount = max(0, scrollbackLineCount)
+        self.isBracketedPasteEnabled = isBracketedPasteEnabled
+        self.isApplicationCursorKeysEnabled = isApplicationCursorKeysEnabled
+        self.mouseTrackingMode = mouseTrackingMode
+        self.isSgrMouseModeEnabled = isSgrMouseModeEnabled
+        self.isAlternateScreenActive = isAlternateScreenActive
     }
 
     public init(
@@ -272,7 +294,12 @@ public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
         viewportLines: [String],
         cursor: TerminalCursorState = TerminalCursorState(),
         scrollbackLineCount: Int = 0,
-        style: TerminalTextStyle = .default
+        style: TerminalTextStyle = .default,
+        isBracketedPasteEnabled: Bool = false,
+        isApplicationCursorKeysEnabled: Bool = false,
+        mouseTrackingMode: TerminalMouseTrackingMode = .none,
+        isSgrMouseModeEnabled: Bool = false,
+        isAlternateScreenActive: Bool = false
     ) {
         self.init(
             columns: columns,
@@ -283,12 +310,21 @@ public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
                 )
             },
             cursor: cursor,
-            scrollbackLineCount: scrollbackLineCount
+            scrollbackLineCount: scrollbackLineCount,
+            isBracketedPasteEnabled: isBracketedPasteEnabled,
+            isApplicationCursorKeysEnabled: isApplicationCursorKeysEnabled,
+            mouseTrackingMode: mouseTrackingMode,
+            isSgrMouseModeEnabled: isSgrMouseModeEnabled,
+            isAlternateScreenActive: isAlternateScreenActive
         )
     }
 
     public var viewportLines: [String] {
         styledLines.map(\.plainTextTrimmed)
+    }
+
+    public var viewportLinesPreservingColumns: [String] {
+        styledLines.map(\.plainText)
     }
 
     public static func placeholder(
@@ -304,8 +340,8 @@ public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
         )
     }
 
-    public func renderedStyledLines(insertingCursor: Bool = false) -> [TerminalStyledLine] {
-        guard insertingCursor, cursor.isVisible else {
+    public func renderedStyledLines(insertingCursor: Bool = false, forceCursor: Bool = false) -> [TerminalStyledLine] {
+        guard insertingCursor, (cursor.isVisible || forceCursor) else {
             return styledLines
         }
 
@@ -335,6 +371,27 @@ public struct TerminalBufferSnapshot: Codable, Equatable, Sendable {
         }
 
         var lines = viewportLines
+        guard cursor.row >= 0, cursor.row < lines.count else {
+            return lines
+        }
+
+        var characters = Array(lines[cursor.row])
+        if cursor.column >= characters.count {
+            characters += Array(repeating: " ", count: cursor.column - characters.count)
+            characters.append("█")
+        } else {
+            characters[cursor.column] = "█"
+        }
+        lines[cursor.row] = String(characters)
+        return lines
+    }
+
+    public func renderedViewportLinesPreservingColumns(insertingCursor: Bool = false) -> [String] {
+        guard insertingCursor, cursor.isVisible else {
+            return viewportLinesPreservingColumns
+        }
+
+        var lines = viewportLinesPreservingColumns
         guard cursor.row >= 0, cursor.row < lines.count else {
             return lines
         }
