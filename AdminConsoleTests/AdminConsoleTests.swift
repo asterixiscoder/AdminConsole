@@ -73,4 +73,17 @@ final class AdminConsoleTests: XCTestCase {
         XCTAssertEqual(resolved.map(\.name), ["stage-bastion"])
         XCTAssertEqual(resolved.first?.username, "qa")
     }
+
+    @MainActor
+    func testAdminThemeManagerResolvesSystemStyleByTraits() {
+        let manager = AdminThemeManager.shared
+        let previous = manager.selectedStyle
+        defer { manager.set(style: previous) }
+
+        manager.set(style: .system)
+
+        XCTAssertEqual(manager.resolvedStyle(for: UITraitCollection(userInterfaceStyle: .light)), .lightOps)
+        XCTAssertEqual(manager.resolvedStyle(for: UITraitCollection(userInterfaceStyle: .dark)), .midnight)
+    }
+
 }

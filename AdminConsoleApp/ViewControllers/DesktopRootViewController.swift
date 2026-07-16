@@ -17,6 +17,7 @@ final class DesktopRootViewController: UIViewController {
     private var browserWebViews: [UUID: WKWebView] = [:]
     private var browserDelegates: [UUID: BrowserNavigationDelegateProxy] = [:]
     private var browserLastAppliedCommandID: [UUID: Int] = [:]
+    private var browserPendingCommandID: [UUID: Int] = [:]
     private var lastRenderedCanvasSize: CGSize = .zero
 
     override func viewDidLoad() {
@@ -167,6 +168,7 @@ final class DesktopRootViewController: UIViewController {
         browserWebViews = browserWebViews.filter { liveBrowserWindowIDs.contains($0.key) }
         browserDelegates = browserDelegates.filter { liveBrowserWindowIDs.contains($0.key) }
         browserLastAppliedCommandID = browserLastAppliedCommandID.filter { liveBrowserWindowIDs.contains($0.key) }
+        browserPendingCommandID = browserPendingCommandID.filter { liveBrowserWindowIDs.contains($0.key) }
 
         if let activeWindow = mirroredActiveWindow(in: snapshot) {
             let panel = makeWindowView(window: activeWindow, snapshot: snapshot)
@@ -856,23 +858,20 @@ final class DesktopRootViewController: UIViewController {
         browserLastAppliedCommandID[windowID] = commandID
         switch command {
         case .reload:
+            browserPendingCommandID[windowID] = commandID
             webView.reload()
         case .goBack:
-            if webView.canGoBack {
-                webView.goBack()
+            guard webView.canGoBack else {
+                return
             }
+            browserPendingCommandID[windowID] = commandID
+            webView.goBack()
         case .goForward:
-            if webView.canGoForward {
-                webView.goForward()
+            guard webView.canGoForward else {
+                return
             }
-        }
-
-        let windowID = PhaseZeroWindowID(rawValue: windowID)
-        Task {
-            await AppEnvironment.phaseZero.acknowledgeBrowserNavigationCommand(
-                windowID: windowID,
-                commandID: commandID
-            )
+            browserPendingCommandID[windowID] = commandID
+            webView.goForward()
         }
     }
 
@@ -906,19 +905,37 @@ final class DesktopRootViewController: UIViewController {
                     canGoBack: snapshot.canGoBack,
                     canGoForward: snapshot.canGoForward
                 )
+                if snapshot.isLoading == false {
+                    await acknowledgeBrowserNavigationCommandIfNeeded(windowID: windowID)
+                }
             case .failed(let message):
                 await AppEnvironment.phaseZero.reportBrowserNavigationFailure(
                     windowID: windowID,
                     message: message
                 )
+                await acknowledgeBrowserNavigationCommandIfNeeded(windowID: windowID)
             case .blocked(let urlString, let reason):
                 await AppEnvironment.phaseZero.reportBrowserNavigationBlocked(
                     windowID: windowID,
                     urlString: urlString,
                     reason: reason
                 )
+                await acknowledgeBrowserNavigationCommandIfNeeded(windowID: windowID)
             }
         }
+    }
+
+    private func acknowledgeBrowserNavigationCommandIfNeeded(windowID: PhaseZeroWindowID) async {
+        let rawWindowID = windowID.rawValue
+        guard let commandID = browserPendingCommandID[rawWindowID] else {
+            return
+        }
+
+        browserPendingCommandID[rawWindowID] = nil
+        await AppEnvironment.phaseZero.acknowledgeBrowserNavigationCommand(
+            windowID: windowID,
+            commandID: commandID
+        )
     }
 
     private func vncBadgeTitle(for state: PhaseZeroVNCState?) -> String {

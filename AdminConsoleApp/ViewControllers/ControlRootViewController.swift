@@ -74,7 +74,20 @@ final class AdminThemeManager {
 
         switch effectiveStyle {
         case .system:
-            return theme(for: traits)
+            return AdminTheme(
+                backgroundPrimary: UIColor.systemBackground,
+                backgroundElevated: UIColor.secondarySystemBackground,
+                surfacePrimary: UIColor.systemBackground,
+                surfaceSecondary: UIColor.tertiarySystemBackground,
+                textPrimary: UIColor.label,
+                textSecondary: UIColor.secondaryLabel,
+                accent: UIColor.systemBlue,
+                accentMuted: UIColor.systemBlue.withAlphaComponent(0.12),
+                strokeSubtle: UIColor.separator,
+                statusSuccess: UIColor.systemGreen,
+                statusWarning: UIColor.systemOrange,
+                statusError: UIColor.systemRed
+            )
         case .midnight:
             return AdminTheme(
                 backgroundPrimary: UIColor(red: 0.06, green: 0.08, blue: 0.12, alpha: 1),

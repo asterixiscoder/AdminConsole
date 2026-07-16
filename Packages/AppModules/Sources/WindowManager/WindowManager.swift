@@ -2,11 +2,13 @@ import DesktopDomain
 
 public enum WindowManager {
     public static func fit(_ frame: NormalizedRect) -> NormalizedRect {
-        NormalizedRect(
-            x: clamp(frame.x, lower: 0.0, upper: 0.95),
-            y: clamp(frame.y, lower: 0.0, upper: 0.95),
-            width: clamp(frame.width, lower: 0.20, upper: 1.0),
-            height: clamp(frame.height, lower: 0.20, upper: 1.0)
+        let width = clamp(frame.width, lower: 0.20, upper: 1.0)
+        let height = clamp(frame.height, lower: 0.20, upper: 1.0)
+        return NormalizedRect(
+            x: clamp(frame.x, lower: 0.0, upper: max(0.0, 1.0 - width)),
+            y: clamp(frame.y, lower: 0.0, upper: max(0.0, 1.0 - height)),
+            width: width,
+            height: height
         )
     }
 

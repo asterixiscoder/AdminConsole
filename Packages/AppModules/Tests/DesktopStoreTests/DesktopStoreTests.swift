@@ -119,6 +119,19 @@ final class DesktopStoreTests: XCTestCase {
         XCTAssertEqual(browserWindow.title, "Example Docs")
     }
 
+    func testWindowManagerFitKeepsFrameOnScreen() {
+        let frame = NormalizedRect(x: 0.88, y: 0.91, width: 0.28, height: 0.24)
+
+        let fitted = WindowManager.fit(frame)
+
+        XCTAssertEqual(fitted.width, 0.28)
+        XCTAssertEqual(fitted.height, 0.24)
+        XCTAssertLessThanOrEqual(fitted.x + fitted.width, 1.0)
+        XCTAssertLessThanOrEqual(fitted.y + fitted.height, 1.0)
+        XCTAssertGreaterThanOrEqual(fitted.x, 0.0)
+        XCTAssertGreaterThanOrEqual(fitted.y, 0.0)
+    }
+
     func testToggleWindowMaximizedStoresAndRestoresFrame() async throws {
         let store = DesktopStore()
         let initial = await store.dispatch(.openWindow(.vnc))
