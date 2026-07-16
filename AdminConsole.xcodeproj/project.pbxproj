@@ -19,6 +19,7 @@
 		A1B2C3D4E5F6000000000078 /* TerminalSelectionGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */; };
 		A1B2C3D4E5F6000000000079 /* SSHTerminalSessionViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000018 /* SSHTerminalSessionViewController.swift */; };
 		A1B2C3D4E5F600000000007C /* ControlTerminalTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000001C /* ControlTerminalTypography.swift */; };
+		A1B2C3D4E5F600000000007D /* ControlAlternateViewportRestorationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F600000000001D /* ControlAlternateViewportRestorationPolicy.swift */; };
 		A1B2C3D4E5F600000000007A /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6000000000019 /* LaunchScreen.storyboard */; };
 		A1B2C3D4E5F600000000006B /* ConnectionKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000080 /* ConnectionKit */; };
 		A1B2C3D4E5F600000000006C /* DesktopCompositor in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6000000000081 /* DesktopCompositor */; };
@@ -62,6 +63,8 @@
 		A1B2C3D4E5F600000000000F /* DesktopRootViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopRootViewController.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000001B /* BrowserNavigationCommandTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserNavigationCommandTracker.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000001A /* AdminSurfaceStyling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminSurfaceStyling.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000001C /* ControlTerminalTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlTerminalTypography.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000001D /* ControlAlternateViewportRestorationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlAlternateViewportRestorationPolicy.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000010 /* AdminConsoleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminConsoleTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000011 /* AdminConsoleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminConsoleUITests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000012 /* AdminConsoleUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminConsoleUITestsLaunchTests.swift; sourceTree = "<group>"; };
@@ -144,6 +147,7 @@
 				A1B2C3D4E5F600000000001A /* AdminSurfaceStyling.swift */,
 				A1B2C3D4E5F600000000001B /* BrowserNavigationCommandTracker.swift */,
 				A1B2C3D4E5F600000000001C /* ControlTerminalTypography.swift */,
+				A1B2C3D4E5F600000000001D /* ControlAlternateViewportRestorationPolicy.swift */,
 				A1B2C3D4E5F6000000000019 /* LaunchScreen.storyboard */,
 				A1B2C3D4E5F6000000000005 /* ViewControllers */,
 				A1B2C3D4E5F600000000000A /* Info.plist */,
@@ -347,6 +351,7 @@
 				A1B2C3D4E5F600000000007A /* AdminSurfaceStyling.swift in Sources */,
 				A1B2C3D4E5F600000000007B /* BrowserNavigationCommandTracker.swift in Sources */,
 				A1B2C3D4E5F600000000007C /* ControlTerminalTypography.swift in Sources */,
+				A1B2C3D4E5F600000000007D /* ControlAlternateViewportRestorationPolicy.swift in Sources */,
 				A1B2C3D4E5F6000000000063 /* ControlRootViewController.swift in Sources */,
 				A1B2C3D4E5F6000000000064 /* DesktopRootViewController.swift in Sources */,
 				A1B2C3D4E5F6000000000079 /* SSHTerminalSessionViewController.swift in Sources */,

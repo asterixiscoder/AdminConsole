@@ -97,6 +97,49 @@ final class AdminConsoleTests: XCTestCase {
     }
 
     @MainActor
+    func testControlAlternateViewportRestorationPolicyResolvesStickyOffsets() {
+        let minX: CGFloat = -8
+        let minY: CGFloat = -12
+        let maxX: CGFloat = 140
+        let maxY: CGFloat = 220
+        let previous = CGPoint(x: 60, y: 90)
+
+        let forced = ControlAlternateViewportRestorationPolicy.targetOffset(
+            previousOffset: previous,
+            forceTopLeft: true,
+            hadHorizontalOverflowBeforeRender: true,
+            hadVerticalOverflowBeforeRender: true,
+            wasNearRightBeforeRender: true,
+            wasNearBottomBeforeRender: true,
+            isUserPanning: false,
+            stickToRight: false,
+            stickToBottom: false,
+            minX: minX,
+            minY: minY,
+            maxX: maxX,
+            maxY: maxY
+        )
+        XCTAssertEqual(forced, CGPoint(x: minX, y: minY))
+
+        let sticky = ControlAlternateViewportRestorationPolicy.targetOffset(
+            previousOffset: CGPoint(x: 20, y: 30),
+            forceTopLeft: false,
+            hadHorizontalOverflowBeforeRender: true,
+            hadVerticalOverflowBeforeRender: false,
+            wasNearRightBeforeRender: true,
+            wasNearBottomBeforeRender: false,
+            isUserPanning: false,
+            stickToRight: false,
+            stickToBottom: true,
+            minX: minX,
+            minY: minY,
+            maxX: maxX,
+            maxY: maxY
+        )
+        XCTAssertEqual(sticky, CGPoint(x: maxX, y: maxY))
+    }
+
+    @MainActor
     func testControlTerminalTypographyCalculatesInsetsAndFontFit() {
         XCTAssertEqual(ControlTerminalTypography.targetInsets(isAlternateScreenActive: false), UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8))
         XCTAssertEqual(ControlTerminalTypography.targetInsets(isAlternateScreenActive: true), UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 4))

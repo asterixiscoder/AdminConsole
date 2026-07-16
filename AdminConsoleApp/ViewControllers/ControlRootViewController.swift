@@ -3210,28 +3210,27 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
             outputView.contentSize.height - outputView.bounds.height + outputView.adjustedContentInset.bottom
         )
 
-        var targetX = min(max(previousOffset.x, minX), maxX)
-        var targetY = min(max(previousOffset.y, minY), maxY)
-
-        if forceTopLeft {
-            targetX = minX
-            targetY = minY
-        } else if !alternateViewportState.isUserPanning {
-            if alternateViewportState.stickToRight || (hadHorizontalOverflowBeforeRender && wasNearRightBeforeRender) {
-                targetX = maxX
-            }
-            if alternateViewportState.stickToBottom || (hadVerticalOverflowBeforeRender && wasNearBottomBeforeRender) {
-                targetY = maxY
-            }
-        }
-
-        let target = CGPoint(x: targetX, y: targetY)
+        let target = ControlAlternateViewportRestorationPolicy.targetOffset(
+            previousOffset: previousOffset,
+            forceTopLeft: forceTopLeft,
+            hadHorizontalOverflowBeforeRender: hadHorizontalOverflowBeforeRender,
+            hadVerticalOverflowBeforeRender: hadVerticalOverflowBeforeRender,
+            wasNearRightBeforeRender: wasNearRightBeforeRender,
+            wasNearBottomBeforeRender: wasNearBottomBeforeRender,
+            isUserPanning: alternateViewportState.isUserPanning,
+            stickToRight: alternateViewportState.stickToRight,
+            stickToBottom: alternateViewportState.stickToBottom,
+            minX: minX,
+            minY: minY,
+            maxX: maxX,
+            maxY: maxY
+        )
         outputView.setContentOffset(target, animated: false)
 
-        alternateViewportState.offsetX = targetX
-        alternateViewportState.offsetY = targetY
-        alternateViewportState.stickToRight = hasHorizontalOverflow(outputView) && targetX >= (maxX - 16)
-        alternateViewportState.stickToBottom = hasVerticalOverflow(outputView) && targetY >= (maxY - 16)
+        alternateViewportState.offsetX = target.x
+        alternateViewportState.offsetY = target.y
+        alternateViewportState.stickToRight = hasHorizontalOverflow(outputView) && target.x >= (maxX - 16)
+        alternateViewportState.stickToBottom = hasVerticalOverflow(outputView) && target.y >= (maxY - 16)
     }
 
     private func symbolicTraits(for style: TerminalTextStyle) -> UIFontDescriptor.SymbolicTraits {
