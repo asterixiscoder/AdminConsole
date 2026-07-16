@@ -75,6 +75,22 @@ final class AdminConsoleTests: XCTestCase {
     }
 
     @MainActor
+    func testBrowserNavigationCommandTrackerAcceptsPendingCommandsAndPrunesState() {
+        var tracker = BrowserNavigationCommandTracker()
+        let windowID = UUID()
+
+        XCTAssertTrue(tracker.shouldAccept(commandID: 2, windowID: windowID))
+        tracker.markPending(commandID: 2, windowID: windowID)
+        XCTAssertEqual(tracker.consumePendingCommand(windowID: windowID), 2)
+        XCTAssertNil(tracker.consumePendingCommand(windowID: windowID))
+
+        XCTAssertFalse(tracker.shouldAccept(commandID: 1, windowID: windowID))
+        tracker.prune(liveWindowIDs: [])
+        XCTAssertTrue(tracker.lastAppliedCommandID.isEmpty)
+        XCTAssertTrue(tracker.pendingCommandID.isEmpty)
+    }
+
+    @MainActor
     func testStyleRoundedSurfaceAppliesCornerRadius() {
         let view = UIView()
 

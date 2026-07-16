@@ -16,8 +16,7 @@ final class DesktopRootViewController: UIViewController {
     private var terminalSelectionPreviews: [UUID: PhaseZeroTerminalSelection] = [:]
     private var browserWebViews: [UUID: WKWebView] = [:]
     private var browserDelegates: [UUID: BrowserNavigationDelegateProxy] = [:]
-    private var browserLastAppliedCommandID: [UUID: Int] = [:]
-    private var browserPendingCommandID: [UUID: Int] = [:]
+    private var browserCommandTracker = BrowserNavigationCommandTracker()
     private var lastRenderedCanvasSize: CGSize = .zero
 
     override func viewDidLoad() {
@@ -167,8 +166,7 @@ final class DesktopRootViewController: UIViewController {
         )
         browserWebViews = browserWebViews.filter { liveBrowserWindowIDs.contains($0.key) }
         browserDelegates = browserDelegates.filter { liveBrowserWindowIDs.contains($0.key) }
-        browserLastAppliedCommandID = browserLastAppliedCommandID.filter { liveBrowserWindowIDs.contains($0.key) }
-        browserPendingCommandID = browserPendingCommandID.filter { liveBrowserWindowIDs.contains($0.key) }
+        browserCommandTracker.prune(liveWindowIDs: liveBrowserWindowIDs)
 
         if let activeWindow = mirroredActiveWindow(in: snapshot) {
             let panel = makeWindowView(window: activeWindow, snapshot: snapshot)
@@ -863,27 +861,25 @@ final class DesktopRootViewController: UIViewController {
         }
 
         let commandID = state.navigationCommandID
-        let lastApplied = browserLastAppliedCommandID[windowID] ?? 0
-        guard commandID > lastApplied else {
+        guard browserCommandTracker.shouldAccept(commandID: commandID, windowID: windowID) else {
             return
         }
 
-        browserLastAppliedCommandID[windowID] = commandID
         switch command {
         case .reload:
-            browserPendingCommandID[windowID] = commandID
+            browserCommandTracker.markPending(commandID: commandID, windowID: windowID)
             webView.reload()
         case .goBack:
             guard webView.canGoBack else {
                 return
             }
-            browserPendingCommandID[windowID] = commandID
+            browserCommandTracker.markPending(commandID: commandID, windowID: windowID)
             webView.goBack()
         case .goForward:
             guard webView.canGoForward else {
                 return
             }
-            browserPendingCommandID[windowID] = commandID
+            browserCommandTracker.markPending(commandID: commandID, windowID: windowID)
             webView.goForward()
         }
     }
@@ -940,11 +936,9 @@ final class DesktopRootViewController: UIViewController {
 
     private func acknowledgeBrowserNavigationCommandIfNeeded(windowID: PhaseZeroWindowID) async {
         let rawWindowID = windowID.rawValue
-        guard let commandID = browserPendingCommandID[rawWindowID] else {
+        guard let commandID = browserCommandTracker.consumePendingCommand(windowID: rawWindowID) else {
             return
         }
-
-        browserPendingCommandID[rawWindowID] = nil
         await AppEnvironment.phaseZero.acknowledgeBrowserNavigationCommand(
             windowID: windowID,
             commandID: commandID
