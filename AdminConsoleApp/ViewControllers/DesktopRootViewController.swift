@@ -210,8 +210,17 @@ final class DesktopRootViewController: UIViewController {
         """
     }
 
-    private func styleRoundedSurface(_ view: UIView, cornerRadius: CGFloat) {
-        view.layer.cornerRadius = cornerRadius
+    private func color(for state: TerminalConnectionState, theme: AdminTheme) -> UIColor {
+        switch state {
+        case .connected:
+            return theme.statusSuccess
+        case .connecting:
+            return theme.statusWarning
+        case .failed:
+            return theme.statusError
+        case .idle:
+            return theme.textSecondary
+        }
     }
 
     private func mirroredActiveWindow(in snapshot: PhaseZeroSnapshot) -> PhaseZeroWindow? {

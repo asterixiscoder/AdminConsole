@@ -75,6 +75,15 @@ final class AdminConsoleTests: XCTestCase {
     }
 
     @MainActor
+    func testStyleRoundedSurfaceAppliesCornerRadius() {
+        let view = UIView()
+
+        styleRoundedSurface(view, cornerRadius: 17)
+
+        XCTAssertEqual(view.layer.cornerRadius, 17)
+    }
+
+    @MainActor
     func testAdminThemeManagerResolvesSystemStyleByTraits() {
         let manager = AdminThemeManager.shared
         let previous = manager.selectedStyle

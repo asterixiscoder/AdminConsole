@@ -2548,10 +2548,6 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         }
     }
 
-    private func styleRoundedSurface(_ view: UIView, cornerRadius: CGFloat) {
-        view.layer.cornerRadius = cornerRadius
-    }
-
     private func color(for state: TerminalConnectionState, theme: AdminTheme) -> UIColor {
         switch state {
         case .connected:

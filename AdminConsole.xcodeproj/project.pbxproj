@@ -59,6 +59,7 @@
 		A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSceneDelegate.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000000E /* ControlRootViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlRootViewController.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F600000000000F /* DesktopRootViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopRootViewController.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F600000000001A /* AdminSurfaceStyling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminSurfaceStyling.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000010 /* AdminConsoleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminConsoleTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000011 /* AdminConsoleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminConsoleUITests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6000000000012 /* AdminConsoleUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdminConsoleUITestsLaunchTests.swift; sourceTree = "<group>"; };
@@ -138,6 +139,7 @@
 				A1B2C3D4E5F600000000000D /* DesktopSceneDelegate.swift */,
 				A1B2C3D4E5F6000000000016 /* PhaseZeroBridge.swift */,
 				A1B2C3D4E5F6000000000017 /* TerminalSelectionGeometry.swift */,
+				A1B2C3D4E5F600000000001A /* AdminSurfaceStyling.swift */,
 				A1B2C3D4E5F6000000000019 /* LaunchScreen.storyboard */,
 				A1B2C3D4E5F6000000000005 /* ViewControllers */,
 				A1B2C3D4E5F600000000000A /* Info.plist */,
@@ -338,6 +340,7 @@
 				A1B2C3D4E5F6000000000062 /* DesktopSceneDelegate.swift in Sources */,
 				A1B2C3D4E5F600000000006A /* PhaseZeroBridge.swift in Sources */,
 				A1B2C3D4E5F6000000000078 /* TerminalSelectionGeometry.swift in Sources */,
+				A1B2C3D4E5F600000000007A /* AdminSurfaceStyling.swift in Sources */,
 				A1B2C3D4E5F6000000000063 /* ControlRootViewController.swift in Sources */,
 				A1B2C3D4E5F6000000000064 /* DesktopRootViewController.swift in Sources */,
 				A1B2C3D4E5F6000000000079 /* SSHTerminalSessionViewController.swift in Sources */,

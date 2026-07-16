@@ -35,7 +35,7 @@ final class SSHTerminalSessionViewController: UIViewController, UITextFieldDeleg
 
         transcriptView.translatesAutoresizingMaskIntoConstraints = false
         transcriptView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        transcriptView.layer.cornerRadius = 12
+        styleRoundedSurface(transcriptView, cornerRadius: 12)
         transcriptView.layer.borderWidth = 1
         transcriptView.isEditable = false
         transcriptView.isSelectable = true
