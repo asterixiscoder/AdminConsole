@@ -15,8 +15,11 @@ final class DesktopSceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
 
         let window = UIWindow(windowScene: windowScene)
-        window.backgroundColor = .black
-        window.rootViewController = RebootExternalMirrorViewController(model: AppEnvironment.rebootModel)
+        SceneWindowConfiguration.apply(
+            to: window,
+            backgroundColor: .black,
+            rootViewController: RebootExternalMirrorViewController(model: AppEnvironment.rebootModel)
+        )
         window.makeKeyAndVisible()
         self.window = window
     }

@@ -97,6 +97,21 @@ final class AdminConsoleTests: XCTestCase {
     }
 
     @MainActor
+    func testSceneWindowConfigurationAppliesRootControllerAndBackgroundColor() {
+        let window = UIWindow(frame: .zero)
+        let rootViewController = UIViewController()
+
+        SceneWindowConfiguration.apply(
+            to: window,
+            backgroundColor: .systemBackground,
+            rootViewController: rootViewController
+        )
+
+        XCTAssertEqual(window.backgroundColor, .systemBackground)
+        XCTAssertTrue(window.rootViewController === rootViewController)
+    }
+
+    @MainActor
     func testStyleRoundedSurfaceAppliesCornerRadius() {
         let view = UIView()
 

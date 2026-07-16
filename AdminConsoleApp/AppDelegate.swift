@@ -54,6 +54,17 @@ enum AppEnvironment {
     )
 }
 
+enum SceneWindowConfiguration {
+    static func apply(
+        to window: UIWindow,
+        backgroundColor: UIColor,
+        rootViewController: UIViewController
+    ) {
+        window.backgroundColor = backgroundColor
+        window.rootViewController = rootViewController
+    }
+}
+
 enum AppIntentRouteTarget: String, Codable {
     case vaults
     case connections

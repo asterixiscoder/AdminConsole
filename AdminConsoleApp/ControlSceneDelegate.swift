@@ -13,8 +13,11 @@ final class ControlSceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         let rootViewController = RebootRootViewController()
         let window = UIWindow(windowScene: windowScene)
-        window.backgroundColor = .systemBackground
-        window.rootViewController = rootViewController
+        SceneWindowConfiguration.apply(
+            to: window,
+            backgroundColor: .systemBackground,
+            rootViewController: rootViewController
+        )
         window.makeKeyAndVisible()
         self.window = window
     }
