@@ -86,48 +86,6 @@ enum AppIntentRouteStore {
     }
 }
 
-private struct StoredHost: Codable {
-    let id: UUID
-    let vault: String
-    let name: String
-    let note: String
-    let hostname: String
-    let port: Int
-    let username: String
-    let isFavorite: Bool
-    let lastConnectedAt: Date?
-}
-
-private struct StoredHostSnapshot: Codable {
-    let hosts: [StoredHost]
-    let recents: [UUID]
-}
-
-private enum StoredHostRepository {
-    private static let storageKey = "TermiusReboot.HostStore.v1"
-
-    static func allHosts() -> [StoredHostEntity] {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let snapshot = try? JSONDecoder().decode(StoredHostSnapshot.self, from: data) else {
-            return []
-        }
-
-        return snapshot.hosts.map { host in
-            StoredHostEntity(
-                id: host.id,
-                name: host.name,
-                hostname: host.hostname,
-                username: host.username,
-                port: host.port,
-                vault: host.vault,
-                isFavorite: host.isFavorite
-            )
-        }.sorted { lhs, rhs in
-            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
-    }
-}
-
 struct StoredHostEntity: AppEntity, Identifiable {
     static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Host")
     static let defaultQuery = StoredHostEntityQuery()
@@ -140,6 +98,36 @@ struct StoredHostEntity: AppEntity, Identifiable {
     var vault: String
     var isFavorite: Bool
 
+    init(
+        id: UUID,
+        name: String,
+        hostname: String,
+        username: String,
+        port: Int,
+        vault: String,
+        isFavorite: Bool
+    ) {
+        self.id = id
+        self.name = name
+        self.hostname = hostname
+        self.username = username
+        self.port = port
+        self.vault = vault
+        self.isFavorite = isFavorite
+    }
+
+    init(record: SavedHostRecord) {
+        self.init(
+            id: record.id.rawValue,
+            name: record.title,
+            hostname: record.host,
+            username: record.username,
+            port: record.port,
+            vault: record.vaultName,
+            isFavorite: record.isFavorite
+        )
+    }
+
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(
             title: "\(name)",
@@ -148,24 +136,43 @@ struct StoredHostEntity: AppEntity, Identifiable {
     }
 }
 
+struct StoredHostRepository {
+    private let store: HostCatalogStore
+
+    init(store: HostCatalogStore = HostCatalogStore(persistence: UserDefaultsHostCatalogPersistence())) {
+        self.store = store
+    }
+
+    func allHosts() async -> [StoredHostEntity] {
+        await store.allHosts().map(StoredHostEntity.init(record:))
+    }
+}
+
 struct StoredHostEntityQuery: EntityQuery, EntityStringQuery {
+    private let repository: StoredHostRepository
+
+    init(repository: StoredHostRepository = StoredHostRepository()) {
+        self.repository = repository
+    }
+
     func entities(for identifiers: [StoredHostEntity.ID]) async throws -> [StoredHostEntity] {
-        let allHosts = StoredHostRepository.allHosts()
+        let allHosts = await repository.allHosts()
         let map = Dictionary(uniqueKeysWithValues: allHosts.map { ($0.id, $0) })
         return identifiers.compactMap { map[$0] }
     }
 
     func suggestedEntities() async throws -> [StoredHostEntity] {
-        StoredHostRepository.allHosts()
+        await repository.allHosts()
     }
 
     func entities(matching string: String) async throws -> [StoredHostEntity] {
         let needle = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allHosts = await repository.allHosts()
         guard !needle.isEmpty else {
-            return StoredHostRepository.allHosts()
+            return allHosts
         }
 
-        return StoredHostRepository.allHosts().filter { host in
+        return allHosts.filter { host in
             host.name.lowercased().contains(needle)
                 || host.hostname.lowercased().contains(needle)
                 || host.username.lowercased().contains(needle)
