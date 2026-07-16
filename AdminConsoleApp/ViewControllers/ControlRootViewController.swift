@@ -1587,8 +1587,8 @@ final class RebootHostDetailsViewController: UIViewController {
         deleteButton.configuration?.title = "Delete Host"
         deleteButton.addTarget(self, action: #selector(deleteHost), for: .touchUpInside)
 
-        hostCardView.layer.cornerRadius = 14
         hostCardView.layer.borderWidth = 1
+        styleRoundedSurface(hostCardView, cornerRadius: 14)
         hostCardView.translatesAutoresizingMaskIntoConstraints = false
         hostCardView.addSubview(summaryLabel)
         summaryLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -2351,8 +2351,8 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     }
 
     private func configureConnectBar() {
-        connectBar.layer.cornerRadius = 12
         connectBar.layer.borderWidth = 1
+        styleRoundedSurface(connectBar, cornerRadius: 12)
         connectBar.translatesAutoresizingMaskIntoConstraints = false
 
         hostField.placeholder = "Search or \"ssh user@hostname -p port\""
@@ -2381,8 +2381,8 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     }
 
     private func configureQuickHostsCard() {
-        quickHostsCard.layer.cornerRadius = 14
         quickHostsCard.layer.borderWidth = 1
+        styleRoundedSurface(quickHostsCard, cornerRadius: 14)
         quickHostsCard.translatesAutoresizingMaskIntoConstraints = false
 
         quickTitleLabel.text = "Quick Connect"
@@ -2405,8 +2405,8 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
     }
 
     private func configureSessionCard() {
-        sessionCard.layer.cornerRadius = 14
         sessionCard.layer.borderWidth = 1
+        styleRoundedSurface(sessionCard, cornerRadius: 14)
         sessionCard.translatesAutoresizingMaskIntoConstraints = false
 
         sessionHostLabel.font = .systemFont(ofSize: 17, weight: .semibold)
@@ -2416,7 +2416,7 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
         sessionStateLabel.text = "Idle"
 
         sessionPreviewView.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        sessionPreviewView.layer.cornerRadius = 10
+        styleRoundedSurface(sessionPreviewView, cornerRadius: 10)
         sessionPreviewView.layer.borderWidth = 1
         sessionPreviewView.isEditable = false
         sessionPreviewView.text = "Terminal output will appear here."
@@ -2546,6 +2546,10 @@ final class RebootConnectionsViewController: UIViewController, UITextFieldDelega
                 label.textColor = theme.textSecondary
             }
         }
+    }
+
+    private func styleRoundedSurface(_ view: UIView, cornerRadius: CGFloat) {
+        view.layer.cornerRadius = cornerRadius
     }
 
     private func color(for state: TerminalConnectionState, theme: AdminTheme) -> UIColor {

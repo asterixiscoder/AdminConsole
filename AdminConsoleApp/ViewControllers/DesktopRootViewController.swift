@@ -77,7 +77,7 @@ final class DesktopRootViewController: UIViewController {
 
         captureBadgeView.translatesAutoresizingMaskIntoConstraints = false
         captureBadgeView.backgroundColor = UIColor.black.withAlphaComponent(0.38)
-        captureBadgeView.layer.cornerRadius = 12
+        styleRoundedSurface(captureBadgeView, cornerRadius: 12)
         captureBadgeView.layer.borderWidth = 1
         captureBadgeView.layer.borderColor = UIColor.white.withAlphaComponent(0.16).cgColor
 
@@ -210,6 +210,10 @@ final class DesktopRootViewController: UIViewController {
         """
     }
 
+    private func styleRoundedSurface(_ view: UIView, cornerRadius: CGFloat) {
+        view.layer.cornerRadius = cornerRadius
+    }
+
     private func mirroredActiveWindow(in snapshot: PhaseZeroSnapshot) -> PhaseZeroWindow? {
         switch snapshot.mirrorMode {
         case .activeWorkMode:
@@ -256,7 +260,7 @@ final class DesktopRootViewController: UIViewController {
         let panel = UIView(frame: frame)
         let isCaptureTarget = inputCaptureTargetID(in: snapshot) == window.id
         panel.backgroundColor = color(for: window.kind)
-        panel.layer.cornerRadius = 18
+        styleRoundedSurface(panel, cornerRadius: 18)
         panel.layer.borderWidth = isCaptureTarget ? 3 : (window.isFocused ? 2 : 1)
         panel.layer.borderColor = isCaptureTarget
             ? UIColor.systemGreen.withAlphaComponent(0.95).cgColor
@@ -271,7 +275,7 @@ final class DesktopRootViewController: UIViewController {
         let chrome = WindowChromeView()
         chrome.translatesAutoresizingMaskIntoConstraints = false
         chrome.backgroundColor = UIColor.white.withAlphaComponent(0.06)
-        chrome.layer.cornerRadius = 18
+        styleRoundedSurface(chrome, cornerRadius: 18)
         chrome.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         chrome.windowID = window.id
         chrome.windowFrame = window.frame
@@ -296,7 +300,7 @@ final class DesktopRootViewController: UIViewController {
         captureChip.textColor = .white
         captureChip.font = .monospacedSystemFont(ofSize: 10, weight: .bold)
         captureChip.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.78)
-        captureChip.layer.cornerRadius = 8
+        styleRoundedSurface(captureChip, cornerRadius: 8)
         captureChip.layer.masksToBounds = true
         captureChip.textAlignment = .center
         captureChip.alpha = isCaptureTarget ? 1 : 0
