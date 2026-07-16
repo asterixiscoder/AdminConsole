@@ -97,6 +97,59 @@ final class AdminConsoleTests: XCTestCase {
     }
 
     @MainActor
+    func testControlScrollFollowPolicyResolvesBottomStickiness() {
+        XCTAssertFalse(
+            ControlScrollFollowPolicy.shouldStickToBottomDuringRender(
+                previousOffsetY: 100,
+                isFollowingTail: false,
+                isAlternateScreenActive: true,
+                contentSizeHeight: 900,
+                boundsHeight: 700,
+                adjustedContentInsetTop: 0,
+                adjustedContentInsetBottom: 0
+            )
+        )
+
+        XCTAssertTrue(
+            ControlScrollFollowPolicy.shouldStickToBottomDuringRender(
+                previousOffsetY: 100,
+                isFollowingTail: true,
+                isAlternateScreenActive: false,
+                contentSizeHeight: 900,
+                boundsHeight: 700,
+                adjustedContentInsetTop: 0,
+                adjustedContentInsetBottom: 0
+            )
+        )
+
+        XCTAssertTrue(
+            ControlScrollFollowPolicy.shouldStickToBottomDuringRender(
+                previousOffsetY: 180,
+                isFollowingTail: false,
+                isAlternateScreenActive: false,
+                contentSizeHeight: 900,
+                boundsHeight: 700,
+                adjustedContentInsetTop: 0,
+                adjustedContentInsetBottom: 0,
+                threshold: 20
+            )
+        )
+
+        XCTAssertFalse(
+            ControlScrollFollowPolicy.shouldStickToBottomDuringRender(
+                previousOffsetY: 120,
+                isFollowingTail: false,
+                isAlternateScreenActive: false,
+                contentSizeHeight: 900,
+                boundsHeight: 700,
+                adjustedContentInsetTop: 0,
+                adjustedContentInsetBottom: 0,
+                threshold: 20
+            )
+        )
+    }
+
+    @MainActor
     func testControlAlternateViewportRestorationPolicyResolvesStickyOffsets() {
         let minX: CGFloat = -8
         let minY: CGFloat = -12

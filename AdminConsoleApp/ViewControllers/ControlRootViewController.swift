@@ -3298,17 +3298,15 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     }
 
     private func shouldStickToBottomDuringRender(previousOffset: CGPoint) -> Bool {
-        if latestTerminalState?.buffer.isAlternateScreenActive == true {
-            return false
-        }
-        if isFollowingTail {
-            return true
-        }
-        let maxOffsetY = max(
-            -outputView.adjustedContentInset.top,
-            outputView.contentSize.height - outputView.bounds.height + outputView.adjustedContentInset.bottom
+        ControlScrollFollowPolicy.shouldStickToBottomDuringRender(
+            previousOffsetY: previousOffset.y,
+            isFollowingTail: isFollowingTail,
+            isAlternateScreenActive: latestTerminalState?.buffer.isAlternateScreenActive == true,
+            contentSizeHeight: outputView.contentSize.height,
+            boundsHeight: outputView.bounds.height,
+            adjustedContentInsetTop: outputView.adjustedContentInset.top,
+            adjustedContentInsetBottom: outputView.adjustedContentInset.bottom
         )
-        return previousOffset.y >= (maxOffsetY - 20)
     }
 
     @objc
