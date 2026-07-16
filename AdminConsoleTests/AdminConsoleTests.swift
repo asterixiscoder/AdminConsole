@@ -77,17 +77,23 @@ final class AdminConsoleTests: XCTestCase {
     @MainActor
     func testBrowserNavigationCommandTrackerAcceptsPendingCommandsAndPrunesState() {
         var tracker = BrowserNavigationCommandTracker()
-        let windowID = UUID()
+        let liveWindowID = UUID()
+        let deadWindowID = UUID()
 
-        XCTAssertTrue(tracker.shouldAccept(commandID: 2, windowID: windowID))
-        tracker.markPending(commandID: 2, windowID: windowID)
-        XCTAssertEqual(tracker.consumePendingCommand(windowID: windowID), 2)
-        XCTAssertNil(tracker.consumePendingCommand(windowID: windowID))
+        XCTAssertTrue(tracker.shouldAccept(commandID: 2, windowID: liveWindowID))
+        tracker.markPending(commandID: 2, windowID: liveWindowID)
+        XCTAssertEqual(tracker.consumePendingCommand(windowID: liveWindowID), 2)
+        XCTAssertNil(tracker.consumePendingCommand(windowID: liveWindowID))
 
-        XCTAssertFalse(tracker.shouldAccept(commandID: 1, windowID: windowID))
-        tracker.prune(liveWindowIDs: [])
-        XCTAssertTrue(tracker.lastAppliedCommandID.isEmpty)
-        XCTAssertTrue(tracker.pendingCommandID.isEmpty)
+        XCTAssertTrue(tracker.shouldAccept(commandID: 5, windowID: deadWindowID))
+        tracker.markPending(commandID: 5, windowID: deadWindowID)
+
+        XCTAssertFalse(tracker.shouldAccept(commandID: 1, windowID: liveWindowID))
+        tracker.prune(liveWindowIDs: [liveWindowID])
+        XCTAssertEqual(tracker.lastAppliedCommandID[liveWindowID], 2)
+        XCTAssertNil(tracker.lastAppliedCommandID[deadWindowID])
+        XCTAssertNil(tracker.pendingCommandID[deadWindowID])
+        XCTAssertNil(tracker.pendingCommandID[liveWindowID])
     }
 
     @MainActor
