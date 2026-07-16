@@ -97,6 +97,39 @@ final class AdminConsoleTests: XCTestCase {
     }
 
     @MainActor
+    func testControlTerminalTypographyCalculatesInsetsAndFontFit() {
+        XCTAssertEqual(ControlTerminalTypography.targetInsets(isAlternateScreenActive: false), UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8))
+        XCTAssertEqual(ControlTerminalTypography.targetInsets(isAlternateScreenActive: true), UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 4))
+
+        let baseSize: CGFloat = 18
+        let minimumFitSize: CGFloat = 10
+        let roomy = ControlTerminalTypography.fittingPhoneMonospaceFontSize(
+            bounds: CGSize(width: 1200, height: 2000),
+            columns: 20,
+            rows: 10,
+            insets: .zero,
+            baseFontSize: baseSize,
+            minimumFitFontSize: minimumFitSize
+        )
+        XCTAssertEqual(roomy, baseSize)
+
+        let cramped = ControlTerminalTypography.fittingPhoneMonospaceFontSize(
+            bounds: CGSize(width: 100, height: 120),
+            columns: 200,
+            rows: 200,
+            insets: .zero,
+            baseFontSize: baseSize,
+            minimumFitFontSize: minimumFitSize
+        )
+        XCTAssertEqual(cramped, minimumFitSize)
+
+        let glyphWidth = ControlTerminalTypography.measuredMonospaceGlyphWidth(
+            for: .monospacedSystemFont(ofSize: baseSize, weight: .regular)
+        )
+        XCTAssertGreaterThan(glyphWidth, 0)
+    }
+
+    @MainActor
     func testSceneWindowConfigurationAppliesRootControllerAndBackgroundColor() {
         let window = UIWindow(frame: .zero)
         let rootViewController = UIViewController()

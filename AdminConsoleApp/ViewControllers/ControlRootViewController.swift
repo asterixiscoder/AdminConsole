@@ -3155,7 +3155,7 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
 
     private func updateOutputTextContainerWidth(for state: TerminalSurfaceState) {
         let font = outputView.font ?? .monospacedSystemFont(ofSize: phoneTerminalBaseFontSize, weight: .regular)
-        let glyphWidth = max(4.0, measuredMonospaceGlyphWidth(for: font))
+        let glyphWidth = max(4.0, ControlTerminalTypography.measuredMonospaceGlyphWidth(for: font))
         let insets = outputView.textContainerInset
         let targetWidth = max(
             outputView.bounds.width - insets.left - insets.right,
@@ -3165,19 +3165,20 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
     }
 
     private func updatePhoneAlternateScreenFontIfNeeded(for state: TerminalSurfaceState) {
-        let regularInsets = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
-        let compactInsets = UIEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
-        let targetInsets = state.buffer.isAlternateScreenActive ? compactInsets : regularInsets
+        let targetInsets = ControlTerminalTypography.targetInsets(isAlternateScreenActive: state.buffer.isAlternateScreenActive)
         if outputView.textContainerInset != targetInsets {
             outputView.textContainerInset = targetInsets
         }
 
         let targetPointSize: CGFloat
         if state.buffer.isAlternateScreenActive && !model.isExternalMirrorConnected() {
-            targetPointSize = fittingPhoneMonospaceFontSize(
+            targetPointSize = ControlTerminalTypography.fittingPhoneMonospaceFontSize(
+                bounds: outputView.bounds,
                 columns: max(1, state.buffer.columns),
                 rows: max(1, state.buffer.rows),
-                insets: targetInsets
+                insets: targetInsets,
+                baseFontSize: phoneTerminalBaseFontSize,
+                minimumFitFontSize: phoneTerminalMinimumFitFontSize
             )
         } else {
             // With an external display attached the phone is a pan viewport over
@@ -3188,31 +3189,6 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
         if abs((outputView.font?.pointSize ?? 0) - targetPointSize) > 0.01 {
             outputView.font = .monospacedSystemFont(ofSize: targetPointSize, weight: .regular)
         }
-    }
-
-    private func fittingPhoneMonospaceFontSize(
-        columns: Int,
-        rows: Int,
-        insets: UIEdgeInsets
-    ) -> CGFloat {
-        guard outputView.bounds.width > 80, outputView.bounds.height > 120 else {
-            return phoneTerminalBaseFontSize
-        }
-
-        let usableWidth = max(1, outputView.bounds.width - insets.left - insets.right)
-        let usableHeight = max(1, outputView.bounds.height - insets.top - insets.bottom)
-        var size = phoneTerminalBaseFontSize
-        while size >= phoneTerminalMinimumFitFontSize {
-            let font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
-            let glyphWidth = measuredMonospaceGlyphWidth(for: font)
-            let requiredWidth = glyphWidth * CGFloat(columns)
-            let requiredHeight = font.lineHeight * CGFloat(rows)
-            if requiredWidth <= usableWidth && requiredHeight <= usableHeight {
-                return size
-            }
-            size -= 0.5
-        }
-        return phoneTerminalMinimumFitFontSize
     }
 
     private func restoreAlternateViewportAfterRender(
@@ -3747,14 +3723,6 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
             pixelWidth: terminalSize.pixelWidth,
             pixelHeight: terminalSize.pixelHeight
         )
-    }
-
-    private func measuredMonospaceGlyphWidth(for font: UIFont) -> CGFloat {
-        let sampleCount = 64
-        let sample = String(repeating: "M", count: sampleCount)
-        let sampleWidth = (sample as NSString).size(withAttributes: [.font: font]).width
-        let perGlyph = sampleWidth / CGFloat(sampleCount)
-        return perGlyph.isFinite ? perGlyph : 6.0
     }
 
     private func makeSoftKeyButton(_ title: String) -> UIButton {
