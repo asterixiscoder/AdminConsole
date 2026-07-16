@@ -97,6 +97,36 @@ final class AdminConsoleTests: XCTestCase {
     }
 
     @MainActor
+    func testControlScrollStateSyncPolicySyncsScrollAndEndInteraction() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 200, height: 100))
+        scrollView.contentSize = CGSize(width: 320, height: 260)
+        scrollView.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        scrollView.contentOffset = CGPoint(x: 300, y: 250)
+
+        let scrolling = ControlScrollStateSyncPolicy.didScroll(
+            previousIsFollowingTail: false,
+            isInteractingWithTerminalScroll: false,
+            scrollView: scrollView,
+            isAlternateScreenActive: true
+        )
+        XCTAssertTrue(scrolling.isFollowingTail)
+        XCTAssertEqual(scrolling.isInteractingWithTerminalScroll, false)
+        XCTAssertEqual(scrolling.alternateViewportState?.offsetX, 300)
+        XCTAssertEqual(scrolling.alternateViewportState?.offsetY, 250)
+        XCTAssertEqual(scrolling.alternateViewportState?.stickToRight, true)
+        XCTAssertEqual(scrolling.alternateViewportState?.stickToBottom, true)
+        XCTAssertNil(scrolling.alternateViewportState?.isUserPanning)
+
+        let ended = ControlScrollStateSyncPolicy.didEndInteraction(
+            scrollView: scrollView,
+            isAlternateScreenActive: true
+        )
+        XCTAssertEqual(ended.isInteractingWithTerminalScroll, false)
+        XCTAssertEqual(ended.isFollowingTail, true)
+        XCTAssertEqual(ended.alternateViewportState?.isUserPanning, false)
+    }
+
+    @MainActor
     func testControlScrollFollowPolicyResolvesBottomStickiness() {
         XCTAssertFalse(
             ControlScrollFollowPolicy.shouldStickToBottomDuringRender(

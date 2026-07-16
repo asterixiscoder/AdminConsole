@@ -3326,38 +3326,56 @@ final class RebootTerminalViewController: UIViewController, UITextViewDelegate {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard scrollView === outputView else { return }
-        if !isInteractingWithTerminalScroll {
-            isFollowingTail = !hasVerticalOverflow(scrollView) || isNearBottom(scrollView)
-        } else if !isNearBottom(scrollView) {
-            isFollowingTail = false
-        }
-        if latestTerminalState?.buffer.isAlternateScreenActive == true {
-            alternateViewportState.offsetX = scrollView.contentOffset.x
-            alternateViewportState.offsetY = scrollView.contentOffset.y
-            alternateViewportState.stickToRight = isNearRight(scrollView)
-            alternateViewportState.stickToBottom = isNearBottom(scrollView)
+        let sync = ControlScrollStateSyncPolicy.didScroll(
+            previousIsFollowingTail: isFollowingTail,
+            isInteractingWithTerminalScroll: isInteractingWithTerminalScroll,
+            scrollView: scrollView,
+            isAlternateScreenActive: latestTerminalState?.buffer.isAlternateScreenActive == true
+        )
+        isFollowingTail = sync.isFollowingTail
+        isInteractingWithTerminalScroll = sync.isInteractingWithTerminalScroll
+        if let alternateViewportState = sync.alternateViewportState {
+            self.alternateViewportState.offsetX = alternateViewportState.offsetX
+            self.alternateViewportState.offsetY = alternateViewportState.offsetY
+            self.alternateViewportState.stickToRight = alternateViewportState.stickToRight
+            self.alternateViewportState.stickToBottom = alternateViewportState.stickToBottom
+            if let isUserPanning = alternateViewportState.isUserPanning {
+                self.alternateViewportState.isUserPanning = isUserPanning
+            }
         }
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         guard scrollView === outputView, !decelerate else { return }
-        isInteractingWithTerminalScroll = false
-        isFollowingTail = !hasVerticalOverflow(scrollView) || isNearBottom(scrollView)
-        if latestTerminalState?.buffer.isAlternateScreenActive == true {
-            alternateViewportState.isUserPanning = false
-            alternateViewportState.stickToRight = isNearRight(scrollView)
-            alternateViewportState.stickToBottom = isNearBottom(scrollView)
+        let sync = ControlScrollStateSyncPolicy.didEndInteraction(
+            scrollView: scrollView,
+            isAlternateScreenActive: latestTerminalState?.buffer.isAlternateScreenActive == true
+        )
+        isInteractingWithTerminalScroll = sync.isInteractingWithTerminalScroll
+        isFollowingTail = sync.isFollowingTail
+        if let alternateViewportState = sync.alternateViewportState {
+            self.alternateViewportState.stickToRight = alternateViewportState.stickToRight
+            self.alternateViewportState.stickToBottom = alternateViewportState.stickToBottom
+            if let isUserPanning = alternateViewportState.isUserPanning {
+                self.alternateViewportState.isUserPanning = isUserPanning
+            }
         }
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         guard scrollView === outputView else { return }
-        isInteractingWithTerminalScroll = false
-        isFollowingTail = !hasVerticalOverflow(scrollView) || isNearBottom(scrollView)
-        if latestTerminalState?.buffer.isAlternateScreenActive == true {
-            alternateViewportState.isUserPanning = false
-            alternateViewportState.stickToRight = isNearRight(scrollView)
-            alternateViewportState.stickToBottom = isNearBottom(scrollView)
+        let sync = ControlScrollStateSyncPolicy.didEndInteraction(
+            scrollView: scrollView,
+            isAlternateScreenActive: latestTerminalState?.buffer.isAlternateScreenActive == true
+        )
+        isInteractingWithTerminalScroll = sync.isInteractingWithTerminalScroll
+        isFollowingTail = sync.isFollowingTail
+        if let alternateViewportState = sync.alternateViewportState {
+            self.alternateViewportState.stickToRight = alternateViewportState.stickToRight
+            self.alternateViewportState.stickToBottom = alternateViewportState.stickToBottom
+            if let isUserPanning = alternateViewportState.isUserPanning {
+                self.alternateViewportState.isUserPanning = isUserPanning
+            }
         }
     }
 
