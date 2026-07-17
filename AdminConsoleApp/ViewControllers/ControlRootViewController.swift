@@ -695,7 +695,8 @@ final class RebootAppModel {
 
     func send(_ text: String) {
         guard let activeSessionID = activeTerminalSessionID,
-              let slot = terminalSessions[activeSessionID] else {
+              let slot = terminalSessions[activeSessionID],
+              slot.state.sessionState == .connected else {
             return
         }
         Task {
